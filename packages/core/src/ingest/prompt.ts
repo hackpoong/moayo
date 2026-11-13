@@ -26,7 +26,7 @@ export const EXTRACTION_SCHEMA = {
           merchant: { type: 'string' },
           amount: { type: 'integer', description: '최종 금액, 원 단위 양수' },
           original_amount: nullable('integer'),
-          kind: { type: 'string', enum: ['expense', 'income', 'transfer'] },
+          kind: { type: 'string', enum: ['expense', 'income'], description: '돈이 나갔으면 expense, 들어왔으면 income' },
           status: { type: 'string', enum: ['approved', 'canceled', 'partial_canceled', 'declined'] },
           payment_label: nullable('string'),
           card_last4: nullable('string'),
@@ -65,7 +65,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 
 [무엇을 적는가]
 - 실제 거래 줄만 적는다. 광고·추천·요약은 빼라: "캐시백 가능한 내역", "자주 구매한 상품", 추천 상품, 이벤트 배너, 포인트 안내, 월·주 합계, 화면 위 주간 달력의 날짜별 합계.
-- 금액이 화면 끝에서 잘려 다 보이지 않는 줄은 빼라.
+- 화면 위·아래 끝에서 잘린 줄·카드(가게 이름, 금액, 날짜 중 하나라도 잘려서 다 보이지 않는 것)는 빼라. 추측해서 채우지 않는다.
 - 같은 가맹점·같은 금액 줄이 여러 번 보이면 보이는 그대로 각각 적는다. 중복 정리는 하지 않는다.
 
 [날짜]
@@ -82,9 +82,9 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 - 해외 결제는 원화 금액을 amount 에, 외화는 foreign_currency(예: "USD")·foreign_amount 에.
 
 [구분]
-- 파란색 + 금액은 income. 그 밖의 결제·출금은 expense.
-- 금액이 회색으로 흐리게 표시된 줄(앱이 소비에서 뺀 줄: 내 계좌 이체, 페이·지역화폐 충전, 카드대금 납부 등)은 greyed = true.
-- 충전, 내 계좌 간 이체, 카드대금 납부는 kind = "transfer".
+- kind 는 돈의 방향만 적는다: 들어온 돈(파란색 + 금액, 입금, 캐시백 지급, 충전 받음)은 income, 나간 돈은 expense.
+  사람에게 보낸 송금·대출이자·충전도 나간 돈이면 expense 다. 이체인지 아닌지는 앱이 따로 판단한다.
+- 금액이 회색으로 흐리게 표시된 줄(앱이 소비에서 뺀 줄: 내 계좌 이체, 페이·지역화폐 충전, 카드대금 납부 등)은 greyed = true. 그 밖은 false.
 
 [결제수단]
 - 가맹점 이름 아래 작은 글씨로 적힌 결제수단(예: "네이버 현대카드", "달달하나 체크카드", "내 하나은행 계좌", "토스제공 · 현금찾기")을 payment_label 에 그대로 옮긴다. 없으면 null.
@@ -92,7 +92,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 - 카드번호 끝 4자리, 승인번호가 보이면 card_last4, approval_no.
 
 [원문 종류별]
-- 지역화폐 앱(여민전 등) 이용내역: 결제, "결제시 캐시백 지급", 충전을 모두 적는다. payment_label 은 앱 이름(예: "여민전"). 캐시백 지급은 kind = "income", merchant = "여민전 캐시백". 충전은 kind = "transfer".
+- 지역화폐 앱(여민전 등) 이용내역: 결제, "결제시 캐시백 지급", 충전을 모두 적는다. payment_label 은 앱 이름(예: "여민전"). 캐시백 지급은 kind = "income", merchant = "여민전 캐시백". 충전은 merchant 에 "충전"이 들어가게 적는다.
 - 영수증: 최종 결제 금액 한 건. 품목은 line_items 에(이름, 금액, 수량). 카드 끝 4자리·승인번호·할부를 적는다.
 - 카드 명세서: 이용 건마다 한 줄. 할부는 installment_months.
 - 페이 결제내역(네이버페이·카카오페이 등): 카드마다 위에 상태("결제완료", "결제취소", "부분취소", "구매확정완료", "배송완료")가, 그 아래 가게 또는 상품 이름, 금액, "11. 13. 12:10 결제" 같은 날짜·시각이 있다.

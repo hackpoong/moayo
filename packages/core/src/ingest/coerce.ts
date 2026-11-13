@@ -39,7 +39,8 @@ function coerceItem(raw: unknown): ExtractedItem | null {
     merchant,
     amount,
     original_amount: int(o.original_amount),
-    kind: oneOf(o.kind, ['expense', 'income', 'transfer'] as const, 'expense'),
+    // 이체 여부는 규칙(회색 표시·충전·내 계좌 이체·이체 규칙)이 정한다. AI 는 방향만.
+    kind: o.kind === 'income' ? 'income' : 'expense',
     status: oneOf(o.status, ['approved', 'canceled', 'partial_canceled', 'declined'] as const, 'approved'),
     payment_label: str(o.payment_label),
     card_last4: str(o.card_last4)?.replace(/\D/g, '').slice(-4) || null,

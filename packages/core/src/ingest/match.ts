@@ -35,6 +35,8 @@ export interface MatchContext {
 
 const MINUTE = 60_000;
 
+const labelKey = (s: string) => s.toLowerCase().replace(/[\s()[\]·.\-_/→>:]/g, '');
+
 /** 사용자가 직접 넣었거나 고친 내역인지. 이런 내역의 값은 덮어쓰지 않는다. */
 export function isUserOwned(tx: Transaction): boolean {
   return tx.source === 'manual' || tx.field_sources?.user_edited === 'true';
@@ -81,7 +83,11 @@ export function scorePair(c: Candidate, t: Transaction, methods: readonly Paymen
     if (c.payment_method_id !== t.payment_method_id) return null;
     score += 25;
   } else if (c.payment_label && t.payment_label && !c.payment_method_id && !t.payment_method_id) {
-    if (c.payment_label !== t.payment_label) return null;
+    // 같은 표시 이름이라도 AI 가 띄어쓰기·화살표를 조금씩 다르게 옮길 수 있다.
+    const a = labelKey(c.payment_label);
+    const b = labelKey(t.payment_label);
+    // 화면 끝에서 잘려 앞부분만 읽힌 이름('내 하나은행')도 같은 이름으로 본다.
+    if (a !== b && !(Math.min(a.length, b.length) >= 3 && (a.startsWith(b) || b.startsWith(a)))) return null;
     score += 25;
   } else if (cLabeled !== tLabeled) {
     score += 10; // 한쪽만 결제수단이 보임: 같은 결제를 다른 앱이 따로 보여 주는 흔한 경우
@@ -188,7 +194,7 @@ export function matchCandidates(candidates: readonly Candidate[], existing: read
       reason: reviewTarget ? (tx.review?.reason ?? '') : '새 내역',
     });
   }
-  applyCombinedOrders(decisions, pool, taken);
+  applyCombinedOrders(decisions, pool, taken, ctx.now);
   return decisions.sort((a, b) => a.candidate.index - b.candidate.index);
 }
 
@@ -210,24 +216,54 @@ const isPlainExpense = (t: Pick<Transaction, 'kind' | 'status'>) => t.kind === '
  *  A) 새 페이 앱 주문들의 합 = 이미 있는 카드 결제 → 주문들은 넣지 않는다.
  *  B) 새 카드 결제 = 이미 있는 페이 앱 주문들의 합 → 카드 결제는 넣지 않는다.
  */
-function applyCombinedOrders(decisions: Decision[], pool: readonly Transaction[], taken: Set<string>): void {
+function applyCombinedOrders(decisions: Decision[], pool: readonly Transaction[], taken: Set<string>, now: string): void {
   const pending = () =>
     decisions.filter((d) => d.action === 'created' && isWrapperLabel(d.candidate.payment_label) && isPlainExpense(d.candidate));
   for (const t of pool) {
     if (taken.has(t.id) || isWrapperLabel(t.payment_label) || !isPlainExpense(t)) continue;
     const date = toKstDate(t.occurred_at);
-    const same = pending().filter((d) => d.candidate.date === date);
-    if (same.length < 2) continue;
+    const fresh = pending().filter((d) => d.candidate.date === date);
+    if (fresh.length === 0) continue;
+    // 긴 캡처를 조각으로 읽으면 같은 결제의 주문이 앞 조각에서 이미 들어와 있을 수 있다.
+    // (이번 조각에서 그 주문을 다시 보고 '이미 있음'으로 맞춘 경우도 포함한다.)
+    const rematched = new Set(decisions.filter((d) => d.target_id && isWrapperLabel(d.candidate.payment_label)).map((d) => d.target_id!));
+    const earlier = pool.filter(
+      (w) =>
+        (!taken.has(w.id) || rematched.has(w.id)) &&
+        isWrapperLabel(w.payment_label) &&
+        isPlainExpense(w) &&
+        !isUserOwned(w) &&
+        toKstDate(w.occurred_at) === date,
+    );
+    const parts: ({ kind: 'new'; d: Decision } | { kind: 'old'; w: Transaction })[] = [
+      ...fresh.map((d) => ({ kind: 'new' as const, d })),
+      ...earlier.map((w) => ({ kind: 'old' as const, w })),
+    ];
+    if (parts.length < 2) continue;
     for (const target of [t.amount, t.original_amount]) {
       if (!target) continue;
-      const hit = subsetSum(same.map((d) => d.candidate.amount), target);
-      if (!hit) continue;
+      const hit = subsetSum(parts.map((p) => (p.kind === 'new' ? p.d.candidate.amount : p.w.amount)), target);
+      if (!hit || !hit.some((i) => parts[i]!.kind === 'new')) continue;
+      const reason = `${describe(t)}에 함께 결제된 주문이라 따로 넣지 않았습니다`;
       for (const i of hit) {
-        const d = same[i]!;
-        d.action = 'duplicate';
-        d.tx = t;
-        d.target_id = t.id;
-        d.reason = `${describe(t)}에 함께 결제된 주문이라 따로 넣지 않았습니다`;
+        const p = parts[i]!;
+        if (p.kind === 'new') {
+          p.d.action = 'duplicate';
+          p.d.tx = t;
+          p.d.target_id = t.id;
+          p.d.reason = reason;
+        } else {
+          taken.add(p.w.id);
+          decisions.push({
+            candidate: fresh[0]!.candidate,
+            action: 'merged',
+            tx: { ...p.w, deleted_at: now, updated_at: now },
+            target_id: p.w.id,
+            filled_fields: ['deleted_at'],
+            score: null,
+            reason,
+          });
+        }
       }
       taken.add(t.id);
       break;

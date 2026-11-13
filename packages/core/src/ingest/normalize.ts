@@ -54,8 +54,11 @@ const TRANSFER_WORDS = /(내\s*계좌\s*이체|카드\s*대금|카드대금)/;
 /** 충전은 이체지만, 하이패스·교통카드 충전은 쓰는 내역이 따로 찍히지 않으므로 지출로 둔다. */
 const isTransferCharge = (s: string) => /충전/.test(s) && !/하이패스|교통카드|티머니|캐시비|레일플러스/.test(s);
 
-function decideKind(item: ExtractedItem, rules: readonly TransferRule[]): { kind: Candidate['kind']; note: string | null } {
-  if (item.greyed && item.kind !== 'transfer') return { kind: 'transfer', note: '원문에서 소비가 아닌 줄로 표시되어 이체로 분류' };
+function decideKind(item: ExtractedItem, rules: readonly TransferRule[], trustGrey: boolean): { kind: Candidate['kind']; note: string | null } {
+  // AI 가 검은 금액을 회색으로 잘못 읽는 일이 있어서, 이체다운 단서(이체·충전·'A → B' 계좌·카드사 이름)가 함께 있을 때만 믿는다.
+  const transferish = /이체|충전|대금|머니|→|->|카드$/.test(`${item.merchant} ${item.payment_label ?? ''}`.trim()) || /카드$/.test(item.merchant.trim());
+  if (trustGrey && item.greyed && transferish && item.kind !== 'transfer')
+    return { kind: 'transfer', note: '원문에서 소비가 아닌 줄로 표시되어 이체로 분류' };
   if (item.kind !== 'transfer' && (TRANSFER_WORDS.test(item.merchant) || isTransferCharge(item.merchant)))
     return { kind: 'transfer', note: '충전·계좌 이체로 보여 이체로 분류' };
   const rule = item.kind !== 'transfer' ? matchTransferRule([item.merchant, item.memo], rules) : null;
@@ -90,7 +93,9 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
     if (!Number.isFinite(amount) || amount <= 0 || !item.merchant?.trim()) return;
 
     const notes: string[] = [];
-    const { kind, note } = decideKind(item, ctx.transferRules);
+    // 회색 표시('소비 아님')는 토스·은행 앱 목록에서만 의미가 있다. 페이 앱·영수증의 흐린 글씨는 무시한다.
+    const trustGrey = ['toss_list', 'bank_app', 'other'].includes(extraction.source_kind);
+    const { kind, note } = decideKind(item, ctx.transferRules, trustGrey);
     if (note) notes.push(note);
     if (item.status === 'partial_canceled') notes.push(`부분취소 (원래 ${item.original_amount ?? '?'}원)`);
     if (item.foreign_currency && item.foreign_amount) notes.push(`해외 결제 ${item.foreign_amount} ${item.foreign_currency}`);

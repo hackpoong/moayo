@@ -395,6 +395,40 @@ describe('페이 앱 내역', () => {
     expect(r.db).toHaveLength(2);
   });
 
+  it('함께 결제된 주문이 서로 다른 조각에 있어도 하나로 맞춘다(앞 조각 주문은 지운다)', () => {
+    let db = ingest([], extraction([{ date: '2026-11-02', merchant: '리본글로벌', amount: 37751, original_amount: 37800, payment_label: '네이버 현대카드' }])).db;
+    db = ingest(db, extraction([np({ date: '2026-11-02', time: '04:55', merchant: '고양이모래 A', amount: 21750 })], 'pay_history')).db;
+    expect(db.filter((t) => !t.deleted_at)).toHaveLength(2);
+    const r = ingest(db, extraction([np({ date: '2026-11-02', time: '04:55', merchant: '고양이모래 B', amount: 16050 })], 'pay_history'));
+    const live = r.db.filter((t) => !t.deleted_at);
+    expect(live).toHaveLength(1);
+    expect(live[0]!.merchant).toBe('리본글로벌');
+  });
+
+  it('조각 겹침으로 같은 주문이 다시 보여도 함께 결제된 주문 규칙이 걸린다', () => {
+    let db = ingest([], extraction([{ date: '2026-11-02', merchant: '리본글로벌', amount: 37751, original_amount: 37800, payment_label: '네이버 현대카드' }])).db;
+    db = ingest(db, extraction([np({ date: '2026-11-02', time: '04:55', merchant: '고양이모래', amount: 21750 })], 'pay_history')).db;
+    const r = ingest(db, extraction([np({ date: '2026-11-02', time: '04:55', merchant: '고양이모래', amount: 21750 }), np({ date: '2026-11-02', time: '04:55', merchant: '고양이모래', amount: 16050 })], 'pay_history'));
+    expect(r.db.filter((t) => !t.deleted_at).map((t) => t.merchant)).toEqual(['리본글로벌']);
+  });
+
+  it('회색으로 읽혀도 이체다운 단서가 없으면(사람 이름 송금) 이체로 보지 않는다', () => {
+    const cands = normalizeExtraction(
+      extraction([
+        { merchant: '홍길동', amount: 100000, greyed: true, payment_label: '내 iM뱅크 계좌' },
+        { merchant: '내 계좌 이체', amount: 140000, greyed: true, payment_label: '토스뱅크 → iM뱅크' },
+        { merchant: '현대카드', amount: 259727, greyed: true, payment_label: '내 하나은행 계좌' },
+      ]),
+      ctx(),
+    );
+    expect(cands.map((c) => c.kind)).toEqual(['expense', 'transfer', 'transfer']);
+  });
+
+  it('페이 앱 화면의 흐린 글씨(회색)는 이체 표시로 보지 않는다', () => {
+    const cands = normalizeExtraction(extraction([np({ merchant: '하이패스 자동충전', amount: 50000, greyed: true })], 'pay_history'), ctx());
+    expect(cands[0]!.kind).toBe('expense');
+  });
+
   it('하이패스·교통카드 충전은 지출, 페이·지역화폐 충전은 이체', () => {
     const cands = normalizeExtraction(extraction([np({ merchant: '하이패스 자동충전', amount: 50000 }), { merchant: '네이버페이 충전', amount: 50000 }]), ctx());
     expect(cands.map((c) => c.kind)).toEqual(['expense', 'transfer']);
@@ -403,6 +437,28 @@ describe('페이 앱 내역', () => {
   it('페이 이름은 결제수단으로 자동 연결하지 않는다(안에 든 카드가 진짜 결제수단)', () => {
     expect(resolvePaymentMethod('네이버페이', null, [...methods, pm('pm-naver', '네이버 현대카드', 'credit_card')])).toBeNull();
     expect(resolvePaymentMethod('네이버페이', null, [...methods, pm('pm-np', '네이버페이', 'easy_pay')])?.id).toBe('pm-np');
+  });
+});
+
+describe('이체 판단은 규칙이 한다', () => {
+  it('AI 가 사람 송금·대출이자를 이체라고 해도, 회색·충전·이체 규칙이 아니면 지출로 둔다', async () => {
+    const { coerceExtraction } = await import('./coerce.ts');
+    const ex = coerceExtraction({
+      source_kind: 'toss_list',
+      items: [
+        { date: '2026-10-21', merchant: '홍길동', amount: 6000, kind: 'transfer', status: 'approved', greyed: false },
+        { date: '2026-10-26', merchant: '대출이자', amount: 62889, kind: 'transfer', status: 'approved', greyed: false },
+        { date: '2026-11-13', merchant: '내 계좌 이체', amount: 140000, kind: 'expense', status: 'approved', greyed: true },
+        { date: '2026-11-01', merchant: '충전', amount: 300000, kind: 'income', status: 'approved', greyed: false, payment_label: '여민전' },
+      ],
+    });
+    expect(normalizeExtraction(ex, ctx()).map((c) => c.kind)).toEqual(['expense', 'expense', 'transfer', 'transfer']);
+  });
+
+  it('결제수단 표시 이름의 띄어쓰기·화살표 차이는 같은 이름으로 본다', () => {
+    const db = ingest([], extraction([{ date: '2026-11-13', merchant: '내 계좌 이체', amount: 140000, greyed: true, payment_label: '토스뱅크 → iM뱅크' }])).db;
+    const r = ingest(db, extraction([{ date: '2026-11-13', merchant: '내 계좌 이체', amount: 140000, greyed: true, payment_label: '토스뱅크→iM뱅크' }]));
+    expect(r.decisions[0]!.action).toBe('duplicate');
   });
 });
 

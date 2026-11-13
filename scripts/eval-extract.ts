@@ -34,6 +34,8 @@ interface TruthRow {
 interface TruthImage {
   id: string;
   path: string;
+  /** 긴 캡처를 앱처럼 자른 조각들(있으면 조각마다 따로 읽고 합친다). */
+  tiles?: string[];
   items: TruthRow[];
 }
 
@@ -64,14 +66,15 @@ const INCOME = ['급여', '부수입', '용돈', '금융수입', '기타수입']
 
 interface Call {
   extraction: Extraction | null;
+  /** 조각별 결과. 앱처럼 조각을 하나씩 파이프라인에 넣을 때 쓴다. */
+  parts?: (Extraction | null)[];
   usage?: { input_tokens: number; output_tokens: number };
   cost_usd?: number | null;
   ms?: number;
   error?: string;
 }
 
-async function callOnce(provider: string, model: string, img: TruthImage): Promise<Call> {
-  const file = imageDir ? join(imageDir, basename(img.path)) : img.path;
+async function callOnce(provider: string, model: string, file: string): Promise<Call> {
   const b64 = readFileSync(file).toString('base64');
   const res = await fetch(FUNCTION_URL, {
     method: 'POST',
@@ -83,13 +86,44 @@ async function callOnce(provider: string, model: string, img: TruthImage): Promi
   return body as unknown as Call;
 }
 
-async function call(provider: string, model: string, img: TruthImage): Promise<Call> {
+async function callFile(provider: string, model: string, file: string): Promise<Call> {
   for (let attempt = 0; attempt < 3; attempt++) {
-    const r = await callOnce(provider, model, img);
+    const r = await callOnce(provider, model, file);
     if (!r.error || !/429|503|overloaded|잠시/.test(r.error)) return r;
     await new Promise((resolve) => setTimeout(resolve, 4000 * (attempt + 1)));
   }
-  return callOnce(provider, model, img);
+  return callOnce(provider, model, file);
+}
+
+/** 조각이 있으면 조각마다 읽고, 겹친 부분에서 똑같이 두 번 나온 줄은 하나로 합친다. */
+async function call(provider: string, model: string, img: TruthImage): Promise<Call> {
+  const files = img.tiles ?? [imageDir ? join(imageDir, basename(img.path)) : img.path];
+  const parts = await Promise.all(files.map((f) => callFile(provider, model, f)));
+  const failed = parts.find((p) => p.error);
+  if (failed && parts.every((p) => p.error)) return failed;
+  const items: ExtractedItem[] = [];
+  const keyOf = (i: ExtractedItem) => `${i.date}|${i.time}|${i.amount}|${i.status}|${i.merchant}`;
+  const seen = new Map<string, number>();
+  for (const p of parts) {
+    const local = new Map<string, number>();
+    for (const it of p.extraction?.items ?? []) {
+      const k = keyOf(it);
+      local.set(k, (local.get(k) ?? 0) + 1);
+      if ((local.get(k) ?? 0) > (seen.get(k) ?? 0)) items.push(it);
+    }
+    for (const [k, n] of local) seen.set(k, Math.max(seen.get(k) ?? 0, n));
+  }
+  return {
+    extraction: { source_kind: parts.find((p) => p.extraction)?.extraction?.source_kind ?? 'other', items },
+    usage: {
+      input_tokens: parts.reduce((s, p) => s + (p.usage?.input_tokens ?? 0), 0),
+      output_tokens: parts.reduce((s, p) => s + (p.usage?.output_tokens ?? 0), 0),
+    },
+    cost_usd: parts.reduce((s, p) => s + (p.cost_usd ?? 0), 0),
+    ms: Math.max(...parts.map((p) => p.ms ?? 0)),
+    error: failed?.error,
+    parts: parts.map((p) => p.extraction),
+  };
 }
 
 const statusClass = (s: string) => (s === 'partial_canceled' ? 'approved' : s);
@@ -129,12 +163,12 @@ function ledger(extractions: Extraction[]): Transaction[] {
   let n = 0;
   for (const ex of extractions) {
     const cands = normalizeExtraction(ex, { source: 'screenshot', paymentMethods: methods, transferRules: [], categories: [], history: [], fallbackDate: '2026-11-14' });
-    for (const d of matchCandidates(cands, db, { householdId: 'h', memberId: null, paymentMethods: methods, now: '', newId: () => `t${++n}` })) {
+    for (const d of matchCandidates(cands, db, { householdId: 'h', memberId: null, paymentMethods: methods, now: '2026-11-14T00:00:00Z', newId: () => `t${++n}` })) {
       if (d.action === 'created' || d.action === 'review') db.push(d.tx);
       if (d.action === 'merged') db = db.map((t) => (t.id === d.tx.id ? d.tx : t));
     }
   }
-  return db;
+  return db.filter((t) => !t.deleted_at);
 }
 const ledgerKey = (t: Transaction) => `${toKstDate(t.occurred_at)}|${t.amount}|${t.kind}|${t.status === 'canceled' ? 'c' : 'a'}`;
 function ledgerDiff(expected: Transaction[], actual: Transaction[]) {
@@ -200,7 +234,8 @@ for (const { provider, model } of models) {
       if (!t.optional) found++;
       matched++;
       if ((merchantSimilarity(p.merchant, t.merchant) ?? 0) >= 0.8) merchantOk++;
-      if (p.kind === t.kind || (t.kind_any && p.kind === 'expense')) kindOk++;
+      // AI 는 방향(나감/들어옴)만 적는다. 이체 판단은 규칙이 하므로 최종 가계부 지표로 본다.
+      if (p.kind === (t.kind === 'income' ? 'income' : 'expense')) kindOk++;
       if (compact(p.payment_label) === compact(t.payment_label)) labelOk++;
       if (p.greyed === t.greyed) greyOk++;
       if (t.original_amount !== null) {
@@ -216,7 +251,9 @@ for (const { provider, model } of models) {
     extras += ex.length;
     for (const e of ex) extraRows.push(`${img.id} ${e.date} ${e.merchant} ${e.amount} ${e.status}`);
   });
-  const final = ledger(calls.map((c) => c.extraction ?? { source_kind: 'other', items: [] }));
+  const final = ledger(
+    calls.flatMap((c) => (c.parts ?? [c.extraction]).map((e) => e ?? ({ source_kind: 'other', items: [] } as Extraction))),
+  );
   const diff = ledgerDiff(expectedLedger, final);
   const cost = calls.reduce((s, c) => s + (c.cost_usd ?? 0), 0);
   const pct = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : null);
@@ -234,7 +271,7 @@ for (const { provider, model } of models) {
     final_ledger_pct: pct(diff.hit, diff.expected),
     final_extra: diff.extra.length,
     cost_usd_22_images: Math.round(cost * 10000) / 10000,
-    cost_krw_per_image: Math.round(((cost / truth.length) * 1450) * 100) / 100,
+    cost_krw_per_image: Math.round((cost / truth.length) * 1450 * 100) / 100,
     avg_seconds: Math.round(calls.reduce((s, c) => s + (c.ms ?? 0), 0) / calls.length / 100) / 10,
     misses,
     extra_rows_list: extraRows,
