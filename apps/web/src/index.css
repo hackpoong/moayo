@@ -13,6 +13,11 @@
   --app-brand-soft: #eef0ff;
   --app-expense: #e5484d;
   --app-income: #2f6fed;
+  --app-transfer: #6b7280;
+  /* 차트 막대 색: 다크 모드에서는 따로 검증한 값을 쓴다. */
+  --app-chart-expense: #e5484d;
+  --app-chart-income: #2f6fed;
+  --app-chart-grid: #e9ebef;
   color-scheme: light;
 }
 
@@ -29,6 +34,10 @@
     --app-brand-soft: #23264a;
     --app-expense: #ff6b6f;
     --app-income: #6ea1ff;
+    --app-transfer: #9aa1ad;
+    --app-chart-expense: #f0595d;
+    --app-chart-income: #5a8ef7;
+    --app-chart-grid: #262a32;
     color-scheme: dark;
   }
 }
@@ -48,6 +57,10 @@
   --color-brand-soft: var(--app-brand-soft);
   --color-expense: var(--app-expense);
   --color-income: var(--app-income);
+  --color-transfer: var(--app-transfer);
+  --color-chart-expense: var(--app-chart-expense);
+  --color-chart-income: var(--app-chart-income);
+  --color-chart-grid: var(--app-chart-grid);
 }
 
 html,
@@ -75,4 +88,22 @@ body {
 }
 .pt-safe {
   padding-top: env(safe-area-inset-top);
+}
+
+/* 가로 스크롤 칩 줄: 스크롤바 숨김 */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+.sheet-enter {
+  animation: sheet-up 160ms ease-out;
 }

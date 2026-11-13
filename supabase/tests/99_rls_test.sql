@@ -155,5 +155,30 @@ update public.transactions set memo = 'x', updated_at = '2000-01-01' where id = 
 select test.ok((select updated_at > now() - interval '1 minute' from public.transactions
   where id = '11111111-1111-1111-1111-111111111111'), 'updated_at 은 클라이언트 값이 아니라 서버 시각');
 
+-- ── created_by 는 서버가 정한다 ─────────────────────────────────────────────
+insert into public.transactions (id, household_id, kind, amount, occurred_at, cash_date, created_by)
+values ('44444444-4444-4444-4444-444444444444', :'ha', 'expense', 1000, now(), current_date, :'carol');
+select test.ok((select created_by from public.transactions where id = '44444444-4444-4444-4444-444444444444') = :'alice',
+  'created_by 를 남의 id 로 보내도 로그인한 사용자로 저장');
+update public.transactions set created_by = :'carol' where id = '44444444-4444-4444-4444-444444444444';
+select test.ok((select created_by from public.transactions where id = '44444444-4444-4444-4444-444444444444') = :'alice',
+  'created_by 는 수정할 수 없음');
+
+-- upsert(같은 id 로 다시 보내기)는 수정으로 처리된다(오프라인 재전송 대비)
+insert into public.transactions (id, household_id, kind, amount, occurred_at, cash_date)
+values ('44444444-4444-4444-4444-444444444444', :'ha', 'expense', 2000, now(), current_date)
+on conflict (id) do update set amount = excluded.amount;
+select test.ok((select amount from public.transactions where id = '44444444-4444-4444-4444-444444444444') = 2000,
+  '같은 id 로 다시 보내면 덮어쓰기');
+
+-- 다른 가족 행의 id 로 upsert 해도 그 행을 바꿀 수 없다
+select test.login(:'carol');
+select test.ok(test.throws(format($$insert into public.transactions (id, household_id, kind, amount, occurred_at, cash_date)
+  values ('44444444-4444-4444-4444-444444444444', %L, 'expense', 1, now(), current_date)
+  on conflict (id) do update set amount = excluded.amount$$, :'hc')), '다른 가족 행 id 로 upsert 불가');
+select test.login(:'alice');
+select test.ok((select amount from public.transactions where id = '44444444-4444-4444-4444-444444444444') = 2000,
+  '다른 가족의 upsert 시도 뒤에도 값 그대로');
+
 reset role;
 \echo 'ALL DB TESTS PASSED'

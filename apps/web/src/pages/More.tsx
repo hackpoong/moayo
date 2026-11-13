@@ -1,5 +1,8 @@
 import type { MemberRole } from '@moayo/core';
-import { Check, Copy, LogOut, Share2, UserMinus } from 'lucide-react';
+import { ArrowLeftRight, Check, ChevronRight, Copy, CreditCard, Download, Hash, LayoutGrid, LogOut, Share2, UserMinus, type LucideIcon } from 'lucide-react';
+import { Link } from 'react-router';
+import { SyncBadge } from '../components/SyncBadge.tsx';
+import { deleteLocalDb } from '../data/localDb.ts';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button, Card, ErrorNote, Field } from '../components/ui.tsx';
 import { useAuth, useSession } from '../lib/authContext.ts';
@@ -18,6 +21,14 @@ interface InviteRow {
   code: string;
   expires_at: string;
 }
+
+const SETTINGS: { to: string; label: string; icon: LucideIcon }[] = [
+  { to: '/more/payment-methods', label: '결제수단', icon: CreditCard },
+  { to: '/more/categories', label: '카테고리', icon: LayoutGrid },
+  { to: '/more/tags', label: '태그', icon: Hash },
+  { to: '/more/transfer-rules', label: '이체로 볼 대상', icon: ArrowLeftRight },
+  { to: '/more/export', label: '내보내기·백업', icon: Download },
+];
 
 const inviteLink = (code: string) => `${window.location.origin}/join/${code}`;
 
@@ -105,14 +116,29 @@ export function More() {
       .catch(() => undefined);
 
   const leave = async () => {
+    if (!window.confirm('로그아웃할까요? 이 기기에 저장된 가계부 사본도 지웁니다(서버에는 그대로 남습니다).')) return;
     clearHouseholdCache(session.user.id);
+    await deleteLocalDb(session.user.id).catch(() => undefined);
     await signOut();
   };
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">더보기</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">더보기</h1>
+        <SyncBadge always />
+      </div>
       <ErrorNote>{error}</ErrorNote>
+
+      <nav className="divide-y divide-line rounded-2xl bg-surface px-4" aria-label="설정">
+        {SETTINGS.map((item) => (
+          <Link key={item.to} to={item.to} className="flex h-14 items-center gap-3">
+            <item.icon className="size-5 text-muted" aria-hidden />
+            <span className="flex-1 font-medium">{item.label}</span>
+            <ChevronRight className="size-5 text-muted" aria-hidden />
+          </Link>
+        ))}
+      </nav>
 
       {memberships.length > 1 ? (
         <Card>
