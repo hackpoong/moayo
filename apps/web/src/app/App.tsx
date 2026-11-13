@@ -10,6 +10,7 @@ import { Join } from '../pages/Join.tsx';
 import { Login } from '../pages/Login.tsx';
 import { More } from '../pages/More.tsx';
 import { Onboarding } from '../pages/Onboarding.tsx';
+import { AiUsagePage } from '../pages/settings/AiUsage.tsx';
 import { CategoriesPage } from '../pages/settings/Categories.tsx';
 import { ExportPage } from '../pages/settings/Export.tsx';
 import { PaymentMethodsPage } from '../pages/settings/PaymentMethods.tsx';
@@ -38,6 +39,7 @@ export function App() {
             <Route path="/more/tags" element={<TagsPage />} />
             <Route path="/more/transfer-rules" element={<TransferRulesPage />} />
             <Route path="/more/export" element={<ExportPage />} />
+            <Route path="/more/ai-usage" element={<AiUsagePage />} />
             <Route path="/more" element={<More />} />
           </Route>
         </Route>

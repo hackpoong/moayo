@@ -1,8 +1,9 @@
 import type { MemberRole } from '@moayo/core';
-import { ArrowLeftRight, Check, ChevronRight, Copy, CreditCard, Download, Hash, LayoutGrid, LogOut, Share2, UserMinus, type LucideIcon } from 'lucide-react';
+import { ArrowLeftRight, Check, ChevronRight, Copy, CreditCard, Download, Hash, LayoutGrid, LogOut, Share2, Sparkles, UserMinus, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import { SyncBadge } from '../components/SyncBadge.tsx';
 import { deleteLocalDb } from '../data/localDb.ts';
+import { AiUsagePreview } from './settings/AiUsage.tsx';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button, Card, ErrorNote, Field } from '../components/ui.tsx';
 import { useAuth, useSession } from '../lib/authContext.ts';
@@ -28,6 +29,7 @@ const SETTINGS: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/more/tags', label: '태그', icon: Hash },
   { to: '/more/transfer-rules', label: '이체로 볼 대상', icon: ArrowLeftRight },
   { to: '/more/export', label: '내보내기·백업', icon: Download },
+  { to: '/more/ai-usage', label: 'AI 사용량·비용', icon: Sparkles },
 ];
 
 const inviteLink = (code: string) => `${window.location.origin}/join/${code}`;
@@ -135,6 +137,7 @@ export function More() {
           <Link key={item.to} to={item.to} className="flex h-14 items-center gap-3">
             <item.icon className="size-5 text-muted" aria-hidden />
             <span className="flex-1 font-medium">{item.label}</span>
+            {item.to === '/more/ai-usage' ? <AiUsagePreview /> : null}
             <ChevronRight className="size-5 text-muted" aria-hidden />
           </Link>
         ))}

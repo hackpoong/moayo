@@ -27,6 +27,7 @@ const PRICES: Record<string, [number, number]> = {
   'claude-haiku-5-5': [0.1, 0.5],
   'claude-sonnet-5-5': [2, 10],
   'claude-opus-5-5': [4, 20],
+  'gemini-3.5-flash': [1.5, 9],
   'gemini-3.5-flash-lite': [0.3, 2.5],
   'gemini-3.1-flash-lite': [0.25, 1.5],
   'gemini-2.5-flash-lite': [0.1, 0.4],
