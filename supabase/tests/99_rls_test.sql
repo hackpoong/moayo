@@ -180,5 +180,19 @@ select test.login(:'alice');
 select test.ok((select amount from public.transactions where id = '44444444-4444-4444-4444-444444444444') = 2000,
   '다른 가족의 upsert 시도 뒤에도 값 그대로');
 
+-- ── 원문 보관함: 구성원은 읽기만, 쓰기는 서버 함수만 ─────────────────────────
+reset role;
+insert into public.raw_inputs (id, household_id, source, raw_text, content_hash)
+values ('55555555-5555-5555-5555-555555555555', :'ha', 'sms', '현대카드 승인 12,500원', 'h1');
+set role authenticated;
+select test.login(:'alice');
+select test.ok((select count(*) from public.raw_inputs) = 1, '앨리스: 자기 가족 원문 보임');
+select test.ok(test.throws(format($$insert into public.raw_inputs (household_id, source, content_hash) values (%L, 'sms', 'x')$$, :'ha')),
+  '구성원도 원문을 직접 넣을 수 없음(서버 함수만)');
+select test.ok(test.throws($$update public.raw_inputs set raw_text = 'x'$$), '원문 수정 불가');
+select test.login(:'carol');
+select test.ok((select count(*) from public.raw_inputs) = 0, '캐럴: 다른 가족 원문 안 보임');
+select test.login(:'alice');
+
 reset role;
 \echo 'ALL DB TESTS PASSED'

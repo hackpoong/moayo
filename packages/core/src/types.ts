@@ -145,6 +145,15 @@ export interface Transaction extends SyncedRow {
   field_sources: Record<string, string>;
   linked_tx_id: Uuid | null;
   created_by: Uuid | null;
+  /** 원문에 적힌 결제수단 이름(아직 결제수단과 연결되지 않았을 때 보여 주고, 나중에 연결한다). */
+  payment_label: string | null;
+  /** status 가 'review' 일 때 이유와 같은 결제로 의심되는 내역. */
+  review: TransactionReview | null;
+}
+
+export interface TransactionReview {
+  reason: string;
+  duplicate_of: Uuid | null;
 }
 
 /** 달력·통계를 어느 날짜로 볼지. */

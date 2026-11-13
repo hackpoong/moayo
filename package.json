@@ -14,7 +14,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:db": "bash scripts/test-db.sh"
+    "test:db": "bash scripts/test-db.sh",
+    "sync-core": "node scripts/sync-core.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

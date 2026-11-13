@@ -23,7 +23,8 @@ import { useData } from '../data/dataContext.ts';
 import { baseRow, newId, useMutations } from '../data/mutations.ts';
 import { KIND_LABEL, shortDate } from '../lib/format.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
-import type { EditorRequest } from './editorContext.ts';
+import { ImportButtons } from './ImportSheet.tsx';
+import { useOpenEditor, type EditorRequest } from './editorContext.ts';
 import { Keypad, QuickAdd } from './Keypad.tsx';
 import { SplitEditor } from './SplitEditor.tsx';
 
@@ -37,6 +38,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   const data = useData();
   const me = useCurrentHousehold();
   const { save, remove } = useMutations();
+  const openEditor = useOpenEditor();
 
   const recentPaymentMethods = useRecentPaymentMethods(me.memberId, original?.payment_method_id ?? null);
 
@@ -126,6 +128,8 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         field_sources: {},
         linked_tx_id: null,
         created_by: null,
+        payment_label: null,
+        review: null,
       }),
       kind,
       amount,
@@ -139,8 +143,23 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
       installment_months: isCredit ? installments : 1,
       splits: finalSplits,
       tag_ids: tagIds,
+      // 사용자가 확인하고 저장했으면 '확인 필요'는 풀린다.
+      status: original?.status === 'review' ? 'confirmed' : (original?.status ?? 'confirmed'),
+      review: null,
+      // 자동으로 들어온 내역을 고치면, 이후 자동 입력이 이 값을 덮지 않게 표시한다.
+      field_sources: original && original.source !== 'manual' ? { ...original.field_sources, user_edited: 'true' } : (original?.field_sources ?? {}),
     };
     await save('transactions', row);
+    onClose();
+  };
+
+  const resolveDuplicate = async (same: boolean) => {
+    if (!original) return;
+    if (same) {
+      await remove('transactions', original);
+    } else {
+      await save('transactions', { ...original, status: 'confirmed', review: null });
+    }
     onClose();
   };
 
@@ -165,6 +184,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         }
       >
         <div className="space-y-4">
+          {!original ? <ImportButtons onPick={(mode) => openEditor({ importMode: mode })} /> : null}
           <KindPicker kind={kind} onChange={changeKind} />
           <p className={`tabular py-3 text-center text-4xl font-bold ${amount ? '' : 'text-muted/50'}`} aria-live="polite">
             {formatAmount(amount)}
@@ -222,6 +242,12 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
       }
     >
       <div className="space-y-5 pt-1">
+        {original?.status === 'review' ? (
+          <ReviewBanner tx={original} onResolve={(same) => void resolveDuplicate(same)} />
+        ) : null}
+        {original?.status === 'canceled' ? (
+          <p className="rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted">취소된 결제입니다. 합계에는 들어가지 않습니다.</p>
+        ) : null}
         <KindPicker kind={kind} onChange={changeKind} />
 
         <button type="button" onClick={() => setStep('amount')} className="flex w-full items-center justify-between rounded-xl bg-surface-2 px-4 py-3 text-left">
@@ -292,6 +318,11 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
               </select>
             </div>
           ) : null}
+          {!paymentMethodId && original?.payment_label ? (
+            <p className="mt-2 text-sm text-muted">
+              원문 표시: ‘{original.payment_label}’ · 더보기 → 결제수단에서 연결하면 다음부터 자동으로 골라집니다.
+            </p>
+          ) : null}
           {cashDate !== date ? (
             <p className="mt-2 flex items-center gap-1.5 text-sm text-muted">
               <CalendarClock className="size-4" aria-hidden />
@@ -344,6 +375,8 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
           </Section>
         ) : null}
 
+        {original && original.source !== 'manual' ? <SourceNote tx={original} /> : null}
+
         <Section label="태그">
           <div className="flex flex-wrap gap-2">
             {data.tags.map((t) => (
@@ -373,6 +406,49 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         </Section>
       </div>
     </Sheet>
+  );
+}
+
+const SOURCE_LABEL: Record<Transaction['source'], string> = {
+  manual: '직접 입력',
+  image: '사진',
+  screenshot: '캡처',
+  statement: '명세서',
+  sms: '문자',
+  push: '알림',
+  share: '공유',
+};
+
+function SourceNote({ tx }: { tx: Transaction }) {
+  return (
+    <p className="text-xs text-muted">
+      {SOURCE_LABEL[tx.source]}에서 자동으로 들어온 내역입니다
+      {tx.field_sources.user_edited ? ' · 직접 고침' : ''}
+    </p>
+  );
+}
+
+function ReviewBanner({ tx, onResolve }: { tx: Transaction; onResolve: (same: boolean) => void }) {
+  const data = useData();
+  const other = tx.review?.duplicate_of ? data.transactions.find((t) => t.id === tx.review!.duplicate_of) : null;
+  return (
+    <div className="rounded-xl bg-expense/10 p-4">
+      <p className="font-semibold text-expense">확인이 필요해요</p>
+      <p className="mt-1 text-sm">{tx.review?.reason ?? '이미 있는 내역과 같은 결제인지 확인해 주세요.'}</p>
+      {other ? (
+        <p className="mt-1 text-sm text-muted">
+          비교 대상: {other.merchant ?? '이름 없음'} · {formatWon(other.amount)} · {shortDate(toKstDate(other.occurred_at))}
+        </p>
+      ) : null}
+      <div className="mt-3 flex gap-2">
+        <Button variant="secondary" className="h-10 flex-1 text-sm" onClick={() => onResolve(true)}>
+          같은 결제예요 (이건 지우기)
+        </Button>
+        <Button variant="secondary" className="h-10 flex-1 text-sm" onClick={() => onResolve(false)}>
+          다른 결제예요
+        </Button>
+      </div>
+    </div>
   );
 }
 

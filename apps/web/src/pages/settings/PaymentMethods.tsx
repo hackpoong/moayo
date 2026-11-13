@@ -18,6 +18,7 @@ import { baseRow, useMutations } from '../../data/mutations.ts';
 import { shortDate } from '../../lib/format.ts';
 import { useCurrentHousehold } from '../../lib/householdContext.ts';
 import { Labeled, MoveButtons, SettingsHeader } from './common.tsx';
+import { PaymentLabels } from './PaymentLabels.tsx';
 import { inputClass, swapSort } from './util.ts';
 
 export function PaymentMethodsPage() {
@@ -47,6 +48,7 @@ export function PaymentMethodsPage() {
         신용카드는 결제일을 넣어 두면 ‘나간 날’ 기준 달력·통계에 실제 결제일로 잡힙니다. 끝 4자리와 별칭은 나중에 문자·알림으로 자동 입력할 때
         카드를 알아보는 데 씁니다.
       </p>
+      <PaymentLabels />
       {active.length === 0 ? <EmptyState title="결제수단이 없습니다" /> : null}
       <ul className="divide-y divide-line rounded-2xl bg-surface px-4">
         {active.map((pm, i) => (

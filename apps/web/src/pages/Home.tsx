@@ -3,6 +3,7 @@ import { ChevronRight, CircleAlert } from 'lucide-react';
 import { Link } from 'react-router';
 import { BasisToggle, EmptyState } from '../components/bits.tsx';
 import { TxRow } from '../components/TxRow.tsx';
+import { ImportButtons } from '../editor/ImportSheet.tsx';
 import { useData, useDataReady } from '../data/dataContext.ts';
 import { useLedger } from '../data/useLedger.ts';
 import { useOpenEditor } from '../editor/editorContext.ts';
@@ -44,6 +45,8 @@ export function Home() {
           </span>
         </div>
       </section>
+
+      <ImportButtons onPick={(mode) => openEditor({ importMode: mode })} />
 
       {reviewCount > 0 ? (
         <Link to="/transactions?review=1" className="flex items-center gap-3 rounded-2xl bg-expense/10 px-5 py-4">

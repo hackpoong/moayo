@@ -1,10 +1,11 @@
-import { CalendarDays, ChartPie, Ellipsis, House, List, Plus, type LucideIcon } from 'lucide-react';
+import { CalendarDays, ChartPie, Ellipsis, House, ImagePlus, List, Plus, type LucideIcon } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { SyncBadge } from '../components/SyncBadge.tsx';
 import { Logo } from '../components/ui.tsx';
 import { DataProvider } from '../data/DataProvider.tsx';
 import { EditorContext, type EditorRequest } from '../editor/editorContext.ts';
+import { ImportSheet } from '../editor/ImportSheet.tsx';
 import { TransactionEditor } from '../editor/TransactionEditor.tsx';
 import { useSession } from '../lib/authContext.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
@@ -59,6 +60,14 @@ function ShellLayout() {
           >
             <Plus className="size-5" aria-hidden />
             내역 추가
+          </button>
+          <button
+            type="button"
+            onClick={() => openEditor({ importMode: 'image' })}
+            className="mb-3 flex h-10 items-center justify-center gap-2 rounded-xl bg-brand-soft text-sm font-semibold text-brand"
+          >
+            <ImagePlus className="size-4" aria-hidden />
+            사진·문자로 넣기
           </button>
           {TABS.map((tab) => (
             <NavLink
@@ -117,7 +126,11 @@ function ShellLayout() {
           </nav>
         </div>
       </div>
-      {editor ? <TransactionEditor key={editor.key} request={editor.request} onClose={closeEditor} /> : null}
+      {editor?.request.importMode ? (
+        <ImportSheet key={editor.key} initialMode={editor.request.importMode} onClose={closeEditor} />
+      ) : editor ? (
+        <TransactionEditor key={editor.key} request={editor.request} onClose={closeEditor} />
+      ) : null}
     </EditorContext.Provider>
   );
 }

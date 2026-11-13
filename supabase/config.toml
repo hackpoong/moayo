@@ -10,3 +10,7 @@ enabled = true
 client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
 secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
 skip_nonce_check = false
+
+# 함수 안에서 직접 로그인을 확인한다(평가 모드·안드로이드 기기 토큰도 받기 위해).
+[functions.ingest]
+verify_jwt = false

@@ -6,6 +6,8 @@ export interface EditorRequest {
   tx?: Transaction;
   /** 새로 입력할 때 기본 날짜(달력에서 날짜를 누르고 추가할 때). */
   date?: DateString;
+  /** 사진·문구 자동 입력 화면을 연다. */
+  importMode?: 'image' | 'text';
 }
 
 export const EditorContext = createContext<((req?: EditorRequest) => void) | null>(null);

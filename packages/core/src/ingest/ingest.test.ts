@@ -1,0 +1,379 @@
+import { describe, expect, it } from 'vitest';
+import { toKstDate, toKstTime } from '../kst.ts';
+import { makeRule, makeTx } from '../testkit.ts';
+import type { Category, PaymentMethod, Transaction } from '../types.ts';
+import { matchCandidates, type Decision } from './match.ts';
+import { normalizeExtraction, resolvePaymentMethod, type NormalizeContext } from './normalize.ts';
+import { parseSms } from './sms.ts';
+import { maskSensitive, merchantSimilarity } from './text.ts';
+import type { ExtractedItem, Extraction } from './types.ts';
+
+// ── 테스트용 가족 설정 ──────────────────────────────────────────────────────
+const pm = (id: string, name: string, type: PaymentMethod['type'], extra: Partial<PaymentMethod> = {}): PaymentMethod => ({
+  id,
+  household_id: 'h',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  deleted_at: null,
+  name,
+  type,
+  issuer: null,
+  last4: null,
+  owner_member_id: null,
+  aliases: [],
+  billing: null,
+  color: null,
+  sort: 0,
+  archived: false,
+  ...extra,
+});
+const methods = [
+  pm('pm-local', '여민전', 'local_currency'),
+  pm('pm-card', '현대카드', 'credit_card', { aliases: ['네이버 현대카드'], billing: { closing_day: 31, payment_day: 14, payment_month_offset: 1 } }),
+  pm('pm-check', '하나 체크카드', 'check_card', { aliases: ['달달하나 체크카드'] }),
+];
+const cat = (id: string, name: string, kind: Category['kind'] = 'expense'): Category => ({
+  id,
+  household_id: 'h',
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  deleted_at: null,
+  name,
+  kind,
+  icon: null,
+  color: null,
+  parent_id: null,
+  sort: 0,
+  archived: false,
+});
+const categories = [cat('c-food', '식비'), cat('c-etc', '기타'), cat('c-inc', '기타수입', 'income')];
+
+const ctx = (over: Partial<NormalizeContext> = {}): NormalizeContext => ({
+  source: 'screenshot',
+  paymentMethods: methods,
+  transferRules: [],
+  categories,
+  history: [],
+  fallbackDate: '2026-11-14',
+  ...over,
+});
+
+let seq = 0;
+const matchCtx = { householdId: 'h', memberId: 'me', paymentMethods: methods, now: '2026-11-14T00:00:00Z', newId: () => `new-${++seq}` };
+
+const item = (over: Partial<ExtractedItem>): ExtractedItem => ({
+  date: '2026-11-07',
+  time: null,
+  merchant: '가게',
+  amount: 1000,
+  original_amount: null,
+  kind: 'expense',
+  status: 'approved',
+  payment_label: null,
+  card_last4: null,
+  approval_no: null,
+  greyed: false,
+  foreign_currency: null,
+  foreign_amount: null,
+  installment_months: null,
+  memo: null,
+  line_items: [],
+  category_hint: null,
+  ...over,
+});
+const extraction = (items: Partial<ExtractedItem>[], kind: Extraction['source_kind'] = 'toss_list'): Extraction => ({
+  source_kind: kind,
+  items: items.map(item),
+});
+
+/** 기기 DB 처럼 결정을 반영한다. */
+function apply(db: Transaction[], decisions: Decision[]): Transaction[] {
+  const next = [...db];
+  for (const d of decisions) {
+    if (d.action === 'created' || d.action === 'review') next.push(d.tx);
+    if (d.action === 'merged') next.splice(next.findIndex((t) => t.id === d.tx.id), 1, d.tx);
+  }
+  return next;
+}
+function ingest(db: Transaction[], ex: Extraction, c: Partial<NormalizeContext> = {}) {
+  const decisions = matchCandidates(normalizeExtraction(ex, ctx(c)), db, matchCtx);
+  return { db: apply(db, decisions), decisions };
+}
+
+// ── 텍스트 도우미 ──────────────────────────────────────────────────────────
+describe('text', () => {
+  it('가맹점 유사도: 법인 표기·띄어쓰기 무시, 포함 관계는 높게', () => {
+    expect(merchantSimilarity('비엔엠홀딩스(주)', '비엔엠홀딩스 주식회사')).toBe(1);
+    expect(merchantSimilarity('이마트', '이마트 세종점')).toBeGreaterThanOrEqual(0.85);
+    expect(merchantSimilarity('코레일', '철도승차권발매')).toBeLessThan(0.3);
+    expect(merchantSimilarity(null, '가게')).toBeNull();
+  });
+
+  it('긴 숫자는 끝 4자리만 남긴다', () => {
+    expect(maskSensitive('대출이자(12345678901234-00009)')).toBe(`대출이자(${'*'.repeat(15)}0009)`);
+    expect(maskSensitive('12,500원 11/13 12:30')).toBe('12,500원 11/13 12:30');
+  });
+
+  it('결제수단 이름 연결: 별칭·이름 포함·끝 4자리', () => {
+    expect(resolvePaymentMethod('네이버 현대카드', null, methods)?.id).toBe('pm-card');
+    expect(resolvePaymentMethod('세종 여민전 하나멤버스 1Q체크카드(후불교통)', null, methods)?.id).toBe('pm-local');
+    expect(resolvePaymentMethod('내 하나은행 계좌', null, methods)).toBeNull();
+    expect(resolvePaymentMethod(null, '1234', [...methods, pm('pm-x', '삼성', 'credit_card', { last4: '1234' })])?.id).toBe('pm-x');
+  });
+});
+
+// ── 정리 ──────────────────────────────────────────────────────────────────
+describe('normalizeExtraction', () => {
+  it('승인거절은 버리고, 취소는 취소 상태로, 회색·충전·내 계좌 이체는 이체로', () => {
+    const cands = normalizeExtraction(
+      extraction([
+        { merchant: '온라인몰', amount: 479000, status: 'declined', payment_label: '하나 체크카드' },
+        { merchant: '파이가게', amount: 46900, status: 'canceled', payment_label: '달달하나 체크카드' },
+        { merchant: '내 계좌 이체', amount: 300000, greyed: true, payment_label: '하나 → iM뱅크' },
+        { merchant: '온누리자동충전', amount: 46500, payment_label: '내 하나은행 계좌' },
+        { merchant: '현대카드', amount: 259727, greyed: true, payment_label: '내 하나은행 계좌' },
+      ]),
+      ctx(),
+    );
+    expect(cands.map((c) => [c.merchant, c.kind, c.status])).toEqual([
+      ['파이가게', 'expense', 'canceled'],
+      ['내 계좌 이체', 'transfer', 'confirmed'],
+      ['온누리자동충전', 'transfer', 'confirmed'],
+      ['현대카드', 'transfer', 'confirmed'],
+    ]);
+  });
+
+  it('이체 규칙에 맞는 이름은 이체', () => {
+    const cands = normalizeExtraction(extraction([{ merchant: '홍길동', amount: 100000, payment_label: '내 하나 계좌' }]), ctx({ transferRules: [makeRule({ pattern: '홍길동' })] }));
+    expect(cands[0]!.kind).toBe('transfer');
+  });
+
+  it('지역화폐 결제 + 캐시백을 뺀 잔액 차감 줄 → 지역화폐 줄만 남긴다', () => {
+    const cands = normalizeExtraction(
+      extraction([
+        { merchant: '장터도담점', amount: 540, payment_label: '세종 여민전 하나멤버스 1Q체크카드' },
+        { merchant: '장터도담점', amount: 11290 },
+        { merchant: '장터도담점', amount: 11550, payment_label: '세종 여민전 하나멤버스 1Q체크카드' },
+      ]),
+      ctx(),
+    );
+    expect(cands.map((c) => c.amount)).toEqual([540, 11550]);
+  });
+
+  it('결제수단 표시 없는 같은 금액 줄: 이름이 같으면 하나로, 다르면 확인 필요 표시', () => {
+    const same = normalizeExtraction(
+      extraction([
+        { merchant: '버거클럽', amount: 5500 },
+        { merchant: '버거클럽', amount: 5500, payment_label: '내 하나은행 계좌' },
+      ]),
+      ctx(),
+    );
+    expect(same).toHaveLength(1);
+    expect(same[0]!.payment_label).toBe('내 하나은행 계좌');
+
+    const differ = normalizeExtraction(
+      extraction([
+        { merchant: '코레일', amount: 36900 },
+        { merchant: '철도승차권발매', amount: 36900, payment_label: '네이버 현대카드' },
+      ]),
+      ctx(),
+    );
+    expect(differ).toHaveLength(2);
+    expect(differ[0]!.suspect_of_index).toBe(1);
+  });
+
+  it('카테고리: 같은 가맹점의 예전 카테고리 > AI 추천', () => {
+    const history = [makeTx({ merchant: '다이소 도담점', splits: [{ category_id: 'c-etc', amount: 1 }] })];
+    const cands = normalizeExtraction(extraction([{ merchant: '다이소 도담점', category_hint: '식비' }, { merchant: '국밥집', category_hint: '식비' }]), ctx({ history }));
+    expect(cands.map((c) => c.category_id)).toEqual(['c-etc', 'c-food']);
+  });
+});
+
+// ── 기존 내역과 맞추기 ─────────────────────────────────────────────────────
+describe('matchCandidates', () => {
+  it('겹치게 찍은 캡처 두 장: 겹친 줄은 합치고, 같은 결제가 여러 번이면 개수만큼만', () => {
+    const first = extraction([
+      { date: '2026-11-06', merchant: 'ATM', amount: 300000, payment_label: '토스제공 · 현금찾기' },
+      { date: '2026-11-06', merchant: 'ATM', amount: 300000, payment_label: '토스제공 · 현금찾기' },
+      { date: '2026-11-06', merchant: '약국', amount: 33510, payment_label: '달달하나 체크카드' },
+    ]);
+    const second = extraction([
+      { date: '2026-11-06', merchant: '약국', amount: 33510, payment_label: '달달하나 체크카드' },
+      { date: '2026-11-06', merchant: 'ATM', amount: 300000, payment_label: '토스제공 · 현금찾기' },
+      { date: '2026-11-06', merchant: 'ATM', amount: 300000, payment_label: '토스제공 · 현금찾기' },
+      { date: '2026-11-06', merchant: 'ATM', amount: 300000, payment_label: '토스제공 · 현금찾기' },
+    ]);
+    let db: Transaction[] = [];
+    db = ingest(db, first).db;
+    const r = ingest(db, second);
+    expect(r.decisions.map((d) => d.action)).toEqual(['duplicate', 'duplicate', 'duplicate', 'created']);
+    expect(r.db.filter((t) => t.merchant === 'ATM')).toHaveLength(3);
+  });
+
+  it('손으로 넣은 내역과 같은 결제면 합치고 빈 칸만 채운다(사용자 값은 그대로)', () => {
+    const manual = makeTx({ id: 'm1', merchant: '이마트', amount: 28700, occurred_at: '2026-11-03T03:00:00Z', has_time: false, payment_method_id: null, memo: '장보기' });
+    const r = ingest([manual], extraction([{ date: '2026-11-03', merchant: '이마트 세종점', amount: 28700, payment_label: '네이버 현대카드', category_hint: '식비' }]));
+    expect(r.decisions[0]!.action).toBe('merged');
+    const tx = r.db[0]!;
+    expect(tx.merchant).toBe('이마트');
+    expect(tx.memo).toBe('장보기');
+    expect(tx.payment_method_id).toBe('pm-card');
+    expect(tx.cash_date).toBe('2026-12-14');
+    expect(tx.splits).toEqual([{ category_id: 'c-food', amount: 28700 }]);
+  });
+
+  it('같은 날 다른 시각의 같은 금액은 따로 산 것으로 본다', () => {
+    const first = makeTx({ id: 'a', merchant: '카페', amount: 4500, occurred_at: '2026-11-07T00:00:00Z', has_time: true, payment_method_id: 'pm-check' });
+    const r = ingest([first], extraction([{ merchant: '카페', amount: 4500, time: '15:00', payment_label: '달달하나 체크카드' }]));
+    expect(r.decisions[0]!.action).toBe('created');
+  });
+
+  it('지역화폐 앱 캡처가 시각을 채워 준다', () => {
+    let db: Transaction[] = [];
+    db = ingest(db, extraction([{ date: '2026-11-11', merchant: '비엔엠홀딩스(주)', amount: 21960, payment_label: '세종 여민전 하나멤버스 1Q체크카드' }])).db;
+    const r = ingest(db, extraction([{ date: '2026-11-11', time: '19:23', merchant: '비엔엠홀딩스(주)', amount: 21960, payment_label: '여민전' }], 'local_currency_app'));
+    expect(r.decisions[0]!.action).toBe('merged');
+    expect(toKstTime(r.db[0]!.occurred_at)).toBe('19:23');
+    expect(r.db[0]!.has_time).toBe(true);
+  });
+
+  it('지역화폐 잔액 차감 줄이 다른 캡처로 들어와도: 먼저 들어오면 금액을 고치고, 나중이면 버린다', () => {
+    // 잔액 차감 줄이 먼저
+    let db = ingest([], extraction([{ date: '2026-11-11', merchant: '비엔엠홀딩스(주)', amount: 21371 }])).db;
+    let r = ingest(db, extraction([{ date: '2026-11-11', merchant: '비엔엠홀딩스(주)', amount: 21960, payment_label: '세종 여민전 하나멤버스 1Q체크카드' }]));
+    expect(r.decisions[0]!.action).toBe('merged');
+    expect(r.db).toHaveLength(1);
+    expect(r.db[0]!.amount).toBe(21960);
+    expect(r.db[0]!.payment_method_id).toBe('pm-local');
+
+    // 지역화폐 줄이 먼저
+    db = ingest([], extraction([{ date: '2026-11-11', merchant: '비엔엠홀딩스(주)', amount: 21960, payment_label: '세종 여민전 하나멤버스 1Q체크카드' }])).db;
+    r = ingest(db, extraction([{ date: '2026-11-11', merchant: '비엔엠홀딩스(주)', amount: 21371 }]));
+    expect(r.decisions[0]!.action).toBe('duplicate');
+    expect(r.db).toHaveLength(1);
+  });
+
+  it('나중 캡처에서 취소로 바뀐 결제는 취소 상태로 바꾼다', () => {
+    const db = ingest([], extraction([{ date: '2026-11-10', merchant: '파이가게', amount: 46900, payment_label: '달달하나 체크카드' }])).db;
+    const r = ingest(db, extraction([{ date: '2026-11-10', merchant: '파이가게', amount: 46900, status: 'canceled', payment_label: '달달하나 체크카드' }]));
+    expect(r.decisions[0]!.action).toBe('merged');
+    expect(r.db[0]!.status).toBe('canceled');
+  });
+
+  it('부분취소: 원래 금액으로 들어와 있던 내역의 금액을 고친다', () => {
+    const db = ingest([], extraction([{ date: '2026-11-01', merchant: '교통앱', amount: 30200, payment_label: '네이버 현대카드' }])).db;
+    const r = ingest(db, extraction([{ date: '2026-11-01', merchant: '교통앱', amount: 4400, original_amount: 30200, status: 'partial_canceled', payment_label: '네이버 현대카드' }]));
+    expect(r.decisions[0]!.action).toBe('merged');
+    expect(r.db).toHaveLength(1);
+    expect(r.db[0]!.amount).toBe(4400);
+  });
+
+  it('한 원문 안에서 바로 붙은, 이름이 다른 같은 금액 쌍은 확인 필요로 연결된다', () => {
+    const r = ingest(
+      [],
+      extraction([
+        { date: '2026-11-09', merchant: '코레일', amount: 36900 },
+        { date: '2026-11-09', merchant: '철도승차권발매', amount: 36900, payment_label: '네이버 현대카드' },
+      ]),
+    );
+    const [korail, card] = r.decisions;
+    expect(card!.action).toBe('created');
+    expect(korail!.action).toBe('review');
+    expect(korail!.tx.review?.duplicate_of).toBe(card!.tx.id);
+  });
+
+  it('떨어져 있는 같은 금액 줄은 의심하지 않는다', () => {
+    const r = ingest(
+      [],
+      extraction([
+        { date: '2026-10-21', merchant: '더벤티', amount: 3900, payment_label: '달달하나 체크카드' },
+        { date: '2026-10-21', merchant: '다이소', amount: 13000, payment_label: '달달하나 체크카드' },
+        { date: '2026-10-21', merchant: '주식회사 카카오', amount: 3900 },
+      ]),
+    );
+    expect(r.decisions.map((d) => d.action)).toEqual(['created', 'created', 'created']);
+  });
+
+  it('잘린 줄로 다시 보인 지역화폐 결제도 하나로 합쳐진다(잔액 차감 줄과 함께 와도)', () => {
+    let db = ingest([], extraction([
+      { date: '2026-11-11', merchant: '비엔엠홀딩스(주)', amount: 21371 },
+      { date: '2026-11-11', merchant: '비엔엠홀딩스(주)', amount: 21960, payment_label: '세종 여민전 하나멤버스 1Q체크카드' },
+    ])).db;
+    expect(db).toHaveLength(1);
+    db = ingest(db, extraction([
+      { date: '2026-11-11', merchant: '비엔엠홀딩스(주)', amount: 21371 },
+      { date: '2026-11-11', merchant: '비엔엠홀딩스(주)', amount: 21960 },
+    ])).db;
+    expect(db).toHaveLength(1);
+    expect(db[0]!.amount).toBe(21960);
+  });
+
+  it('다음 날의 할인 결제(원래 금액이 같음)를 전날 결제와 합치지 않는다', () => {
+    const db = ingest([], extraction([{ date: '2026-11-10', merchant: '일레클', amount: 2150, payment_label: '달달하나 체크카드' }])).db;
+    const r = ingest(db, extraction([{ date: '2026-11-11', merchant: '일레클', amount: 264, original_amount: 2150, payment_label: '달달하나 체크카드' }]));
+    expect(r.decisions[0]!.action).toBe('created');
+    expect(r.db.map((t) => t.amount).sort((a, b) => a - b)).toEqual([264, 2150]);
+  });
+
+  it('캡처끼리는 날짜가 다르면 같은 결제로 보지 않는다', () => {
+    const db = ingest([], extraction([{ date: '2026-11-01', merchant: '교회', amount: 20000, payment_label: '내 하나 계좌' }])).db;
+    const r = ingest(db, extraction([{ date: '2026-11-02', merchant: '교회', amount: 20000, payment_label: '내 하나 계좌' }]));
+    expect(r.decisions[0]!.action).toBe('created');
+  });
+
+  it('다른 카드로 낸 같은 금액은 절대 합치지 않는다', () => {
+    const db = ingest([], extraction([{ merchant: '마트', amount: 10000, payment_label: '네이버 현대카드' }])).db;
+    const r = ingest(db, extraction([{ merchant: '마트', amount: 10000, payment_label: '달달하나 체크카드' }]));
+    expect(r.decisions[0]!.action).toBe('created');
+  });
+
+  it('사용자가 고친 내역은 금액을 바꾸지 않는다', () => {
+    const edited = makeTx({ id: 'e', merchant: '교통앱', amount: 30200, occurred_at: '2026-11-01T03:00:00Z', has_time: false, payment_method_id: 'pm-card', source: 'screenshot', field_sources: { user_edited: 'true' } });
+    const r = ingest([edited], extraction([{ date: '2026-11-01', merchant: '교통앱', amount: 4400, original_amount: 30200, status: 'partial_canceled', payment_label: '네이버 현대카드' }]));
+    expect(r.db[0]!.amount).toBe(30200);
+  });
+
+  it('새 내역의 날짜·현금일·결제수단·카테고리', () => {
+    const r = ingest([], extraction([{ date: '2026-11-13', time: '12:10', merchant: '국밥집', amount: 10000, payment_label: '네이버 현대카드', category_hint: '식비' }]));
+    const tx = r.db[0]!;
+    expect(toKstDate(tx.occurred_at)).toBe('2026-11-13');
+    expect(tx.cash_date).toBe('2026-12-14');
+    expect(tx.splits).toEqual([{ category_id: 'c-food', amount: 10000 }]);
+    expect(tx.source).toBe('screenshot');
+    expect(tx.member_id).toBe('me');
+  });
+});
+
+// ── 문자 ──────────────────────────────────────────────────────────────────
+describe('parseSms', () => {
+  const today = '2026-11-14';
+  it('카드 승인 (여러 줄)', () => {
+    const r = parseSms('[Web발신]\n현대카드 M 승인\n홍*동\n12,500원 일시불\n11/13 12:30\n스타벅스 세종점\n누적1,234,560원', today);
+    expect(r?.items[0]).toMatchObject({ date: '2026-11-13', time: '12:30', merchant: '스타벅스 세종점', amount: 12500, status: 'approved', kind: 'expense' });
+    expect(r?.items[0]?.payment_label).toContain('현대카드');
+  });
+
+  it('카드 승인 (한 줄, 끝 4자리, 할부)', () => {
+    const r = parseSms('신한카드(1234)승인 홍*동 900,000원(3개월)11/07 15:20 하이마트 누적2,000,000원', today);
+    expect(r?.items[0]).toMatchObject({ amount: 900000, card_last4: '1234', installment_months: 3, merchant: '하이마트', date: '2026-11-07' });
+  });
+
+  it('취소 문자', () => {
+    const r = parseSms('[Web발신]\nKB국민카드1234취소\n홍*동님\n18,100원\n11/06 09:10\n코레일', today);
+    expect(r?.items[0]).toMatchObject({ status: 'canceled', amount: 18100, merchant: '코레일' });
+  });
+
+  it('입금 문자', () => {
+    const r = parseSms('[하나] 11/08 10:21\n입금 210,000원\n홍길동\n잔액 1,000,000원', today);
+    expect(r?.items[0]).toMatchObject({ kind: 'income', amount: 210000, merchant: '홍길동', date: '2026-11-08' });
+  });
+
+  it('연초에 받은 지난해 12월 문자', () => {
+    expect(parseSms('현대카드 승인\n12,000원 일시불\n12/31 23:50\n편의점', '2027-01-02')?.items[0]?.date).toBe('2026-12-31');
+  });
+
+  it('모르는 형식은 null (AI 로 넘긴다)', () => {
+    expect(parseSms('오늘 저녁 뭐 먹지', today)).toBeNull();
+    expect(parseSms('이벤트! 최대 50,000원 할인', today)).toBeNull();
+  });
+});

@@ -32,6 +32,8 @@ export function makeTx(over: Partial<Transaction> = {}): Transaction {
     field_sources: {},
     linked_tx_id: null,
     created_by: null,
+    payment_label: null,
+    review: null,
     ...over,
   };
 }
