@@ -42,18 +42,42 @@ interface Job {
   run: () => Promise<IngestResult>;
 }
 
-/** 긴 변을 줄여 JPEG 로. 글씨가 읽힐 만큼만 남겨 전송량과 AI 비용을 줄인다. */
-async function shrink(file: File): Promise<Blob> {
+/**
+ * 사진을 AI 가 읽기 좋은 크기의 JPEG 조각들로 만든다.
+ *  * 보통 사진·캡처: 한 장. 긴 변 1800px, 짧은 변 1100px 이하로 줄인다.
+ *  * 아주 긴 캡처(스크롤 캡처, 세로가 가로의 2.6배 넘음): 줄이면 글씨가 뭉개지므로, 위아래로 겹치게 잘라 여러 장으로.
+ *    겹친 부분의 같은 줄은 서버에서 이미 있는 내역으로 알아보고 한 번만 넣는다.
+ */
+async function prepare(file: File): Promise<Blob[]> {
   const bitmap = await createImageBitmap(file);
-  const MAX_LONG = 1800;
-  const MAX_SHORT = 1100;
-  const scale = Math.min(1, MAX_LONG / Math.max(bitmap.width, bitmap.height), MAX_SHORT / Math.min(bitmap.width, bitmap.height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('이미지를 변환하지 못했습니다.'))), 'image/jpeg', 0.85));
+  const { width, height } = bitmap;
+  const toJpeg = (sx: number, sy: number, sw: number, sh: number, scale: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(sw * scale);
+    canvas.height = Math.round(sh * scale);
+    canvas.getContext('2d')!.drawImage(bitmap, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('이미지를 변환하지 못했습니다.'))), 'image/jpeg', 0.88),
+    );
+  };
+  try {
+    if (height / width <= 2.6) {
+      const scale = Math.min(1, 1800 / Math.max(width, height), 1100 / Math.min(width, height));
+      return [await toJpeg(0, 0, width, height, scale)];
+    }
+    const scale = Math.min(1, 1100 / width);
+    const tile = Math.round(width * 2);
+    const step = Math.round(tile * 0.75);
+    const blobs: Blob[] = [];
+    for (let y = 0; y < height; y += step) {
+      const h = Math.min(tile, height - y);
+      blobs.push(await toJpeg(0, y, width, h, scale));
+      if (y + h >= height) break;
+    }
+    return blobs;
+  } finally {
+    bitmap.close();
+  }
 }
 
 /** 사진·캡처·문자를 넣으면 AI 가 정리해서 바로 내역에 넣는다. */
@@ -99,23 +123,40 @@ export function ImportSheet({ initialMode = 'image', onClose }: { initialMode?: 
   const addFiles = (files: FileList | null) => {
     if (!files?.length) return;
     const month = new Date().toISOString().slice(0, 7);
-    const created: Job[] = [...files].map((file, i) => {
+    const list = [...files];
+    // 조각 수를 미리 알 수 없으므로, 사진마다 하나의 작업이 조각들을 차례로 올리고 읽는다.
+    const created: Job[] = list.map((file, i) => {
       const id = crypto.randomUUID();
+      const name = file.name || `사진 ${i + 1}`;
       return {
         id,
-        label: file.name || `사진 ${i + 1}`,
+        label: name,
         state: 'waiting',
         run: async () => {
-          const blob = await shrink(file);
-          const path = `${household.householdId}/${month}/${id}.jpg`;
-          const { error } = await db().storage.from('inputs').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
-          if (error) throw new Error(`올리지 못했습니다: ${error.message}`);
-          update(id, { state: 'reading' });
-          return call({ source: 'screenshot', image_path: path });
+          const pieces = await prepare(file);
+          const total: IngestResult = { read: 0, created: 0, merged: 0, duplicate: 0, review: 0, items: [] };
+          for (const [n, blob] of pieces.entries()) {
+            if (pieces.length > 1) update(id, { label: `${name} (${n + 1}/${pieces.length})` });
+            update(id, { state: 'uploading' });
+            const path = `${household.householdId}/${month}/${id}-${n}.jpg`;
+            const { error } = await db().storage.from('inputs').upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+            if (error) throw new Error(`올리지 못했습니다: ${error.message}`);
+            update(id, { state: 'reading' });
+            const r = await call({ source: 'screenshot', image_path: path });
+            total.read += r.read;
+            total.created += r.created;
+            total.merged += r.merged;
+            total.duplicate += r.duplicate;
+            total.review += r.review;
+            total.items.push(...r.items);
+            total.repeated = r.repeated;
+          }
+          if (pieces.length > 1) update(id, { label: `${name} (${pieces.length}조각)` });
+          return total;
         },
       };
     });
-    setJobs((list) => [...list, ...created]);
+    setJobs((prev) => [...prev, ...created]);
     void runQueue(created);
     if (fileInput.current) fileInput.current.value = '';
   };

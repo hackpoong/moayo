@@ -35,6 +35,14 @@ export function merchantSimilarity(a: string | null | undefined, b: string | nul
   return (2 * common) / (bx.length + by.length);
 }
 
+/**
+ * 네이버페이·카카오페이처럼 다른 결제수단을 감싸는 '페이' 이름인지.
+ * 같은 결제가 페이 앱에는 실제 가게·상품 이름으로, 카드·토스에는 결제대행사 이름으로 찍혀서 이름으로는 맞출 수 없다.
+ */
+export function isWrapperLabel(label: string | null | undefined): boolean {
+  return !!label && /(네이버\s*페이|naver\s*pay|n\s*pay|카카오\s*페이|kakao\s*pay|토스\s*페이|toss\s*pay|페이코|payco|스마일\s*페이|쿠페이|삼성\s*페이|애플\s*페이)/i.test(label);
+}
+
 /** AI 로 보내기 전에 카드·계좌 번호처럼 긴 숫자는 끝 4자리만 남긴다. */
 export function maskSensitive(text: string): string {
   return text.replace(/\d[\d-]{7,}\d/g, (m) => {

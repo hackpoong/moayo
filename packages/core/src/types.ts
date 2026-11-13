@@ -127,6 +127,8 @@ export interface Transaction extends SyncedRow {
   status: TransactionStatus;
   /** 원 단위 정수. */
   amount: number;
+  /** 할인·포인트·부분취소 전 금액(원문에 취소선으로 보이던 값). 다른 앱의 같은 결제를 맞출 때 쓴다. */
+  original_amount: number | null;
   occurred_at: IsoDateTime;
   has_time: boolean;
   cash_date: DateString;

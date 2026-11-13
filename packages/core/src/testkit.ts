@@ -14,6 +14,7 @@ export function makeTx(over: Partial<Transaction> = {}): Transaction {
     kind: 'expense',
     status: 'confirmed',
     amount: 10000,
+    original_amount: null,
     occurred_at: '2026-11-13T03:00:00Z',
     has_time: true,
     cash_date: '2026-11-13',

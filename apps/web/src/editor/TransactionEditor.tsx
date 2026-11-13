@@ -130,9 +130,12 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         created_by: null,
         payment_label: null,
         review: null,
+        original_amount: null,
       }),
       kind,
       amount,
+      // 금액을 직접 바꾸면 원문의 할인 전 금액은 더 이상 맞지 않는다.
+      original_amount: original && original.amount !== amount ? null : (original?.original_amount ?? null),
       occurred_at: fromKst(date, time || '12:00'),
       has_time: !!time,
       cash_date: cashDate,

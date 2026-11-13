@@ -7,7 +7,7 @@
 import { fromKst } from '../kst.ts';
 import { matchTransferRule } from '../rules.ts';
 import type { Category, PaymentMethod, Transaction, TransactionSource, TransferRule } from '../types.ts';
-import { merchantSimilarity, normalizeMerchant } from './text.ts';
+import { isWrapperLabel, merchantSimilarity, normalizeMerchant } from './text.ts';
 import type { Candidate, ExtractedItem, Extraction } from './types.ts';
 
 export interface NormalizeContext {
@@ -36,6 +36,8 @@ export function resolvePaymentMethod(
   }
   if (!label) return null;
   const target = compact(label);
+  // 페이 이름은 그 이름 그대로 등록한 결제수단이 있을 때만 연결한다(안에 든 카드가 진짜 결제수단).
+  if (isWrapperLabel(label)) return live.find((m) => [m.name, ...m.aliases].some((k) => compact(k) === target)) ?? null;
   let best: { method: PaymentMethod; score: number } | null = null;
   for (const m of live) {
     for (const key of [m.name, ...m.aliases]) {
@@ -48,11 +50,14 @@ export function resolvePaymentMethod(
   return best?.method ?? null;
 }
 
-const TRANSFER_WORDS = /(충전|내\s*계좌\s*이체|카드\s*대금|카드대금)/;
+const TRANSFER_WORDS = /(내\s*계좌\s*이체|카드\s*대금|카드대금)/;
+/** 충전은 이체지만, 하이패스·교통카드 충전은 쓰는 내역이 따로 찍히지 않으므로 지출로 둔다. */
+const isTransferCharge = (s: string) => /충전/.test(s) && !/하이패스|교통카드|티머니|캐시비|레일플러스/.test(s);
 
 function decideKind(item: ExtractedItem, rules: readonly TransferRule[]): { kind: Candidate['kind']; note: string | null } {
   if (item.greyed && item.kind !== 'transfer') return { kind: 'transfer', note: '원문에서 소비가 아닌 줄로 표시되어 이체로 분류' };
-  if (item.kind !== 'transfer' && TRANSFER_WORDS.test(item.merchant)) return { kind: 'transfer', note: '충전·계좌 이체로 보여 이체로 분류' };
+  if (item.kind !== 'transfer' && (TRANSFER_WORDS.test(item.merchant) || isTransferCharge(item.merchant)))
+    return { kind: 'transfer', note: '충전·계좌 이체로 보여 이체로 분류' };
   const rule = item.kind !== 'transfer' ? matchTransferRule([item.merchant, item.memo], rules) : null;
   if (rule) return { kind: 'transfer', note: `이체 규칙 ‘${rule.label}’` };
   return { kind: item.kind, note: null };

@@ -344,6 +344,68 @@ describe('matchCandidates', () => {
   });
 });
 
+// ── 페이 앱 결제내역(네이버페이 등) ──────────────────────────────────────────
+describe('페이 앱 내역', () => {
+  const np = (over: Partial<ExtractedItem>) => ({ payment_label: '네이버페이', ...over });
+
+  it('이름이 달라도 같은 날 같은 금액이면 합치고, 시각과 실제 이름(메모)을 채운다', () => {
+    const db = ingest([], extraction([{ date: '2026-11-13', merchant: '결제대행 정기결제', amount: 29000, payment_label: '네이버 현대카드' }])).db;
+    const r = ingest(db, extraction([np({ date: '2026-11-13', time: '12:10', merchant: 'AI 구독', amount: 29000 })], 'pay_history'));
+    expect(r.decisions[0]!.action).toBe('merged');
+    expect(r.db).toHaveLength(1);
+    expect(r.db[0]!.has_time).toBe(true);
+    expect(r.db[0]!.memo).toContain('네이버페이: AI 구독');
+    expect(r.db[0]!.payment_method_id).toBe('pm-card');
+  });
+
+  it('포인트 차감 전 금액(카드의 원래 금액)으로도 맞춘다', () => {
+    const db = ingest([], extraction([{ date: '2026-11-08', merchant: '인테리어앱', amount: 12890, original_amount: 13900, payment_label: '네이버 현대카드' }])).db;
+    const r = ingest(db, extraction([np({ date: '2026-11-08', time: '16:12', merchant: '원목 옷걸이', amount: 13900 })], 'pay_history'));
+    expect(r.decisions[0]!.action).toBe('merged');
+    expect(r.db).toHaveLength(1);
+    expect(r.db[0]!.amount).toBe(12890);
+  });
+
+  it('페이 앱이 먼저 들어와도: 나중 카드 내역이 실제 결제수단을 채운다', () => {
+    const db = ingest([], extraction([np({ date: '2026-11-12', time: '17:39', merchant: '철도승차권(한국철도)', amount: 40300 })], 'pay_history')).db;
+    const r = ingest(db, extraction([{ date: '2026-11-12', merchant: '코레일', amount: 40300, payment_label: '네이버 현대카드' }]));
+    expect(r.decisions[0]!.action).toBe('merged');
+    expect(r.db[0]!.payment_label).toBe('네이버 현대카드');
+    expect(r.db[0]!.payment_method_id).toBe('pm-card');
+    expect(r.db[0]!.cash_date).toBe('2026-12-14');
+  });
+
+  it('날짜가 다르면 페이 앱 내역이라도 합치지 않는다', () => {
+    const db = ingest([], extraction([{ date: '2026-11-10', merchant: '일레클', amount: 2150, payment_label: '달달하나 체크카드' }])).db;
+    const r = ingest(db, extraction([np({ date: '2026-11-11', time: '08:53', merchant: '쏘카일레클 라이딩', amount: 2150 })], 'pay_history'));
+    expect(r.decisions[0]!.action).toBe('created');
+  });
+
+  it('여러 주문이 카드에서 한 번에 결제된 경우: 주문 쪽이 나중이면 넣지 않는다', () => {
+    const db = ingest([], extraction([{ date: '2026-11-02', merchant: '리본글로벌', amount: 37751, original_amount: 37800, payment_label: '네이버 현대카드' }])).db;
+    const r = ingest(db, extraction([np({ date: '2026-11-02', time: '04:55', merchant: '고양이모래 A', amount: 21750 }), np({ date: '2026-11-02', time: '04:55', merchant: '고양이모래 B', amount: 16050 })], 'pay_history'));
+    expect(r.decisions.map((d) => d.action)).toEqual(['duplicate', 'duplicate']);
+    expect(r.db).toHaveLength(1);
+  });
+
+  it('여러 주문이 카드에서 한 번에 결제된 경우: 카드 쪽이 나중이면 카드 결제를 넣지 않는다', () => {
+    const db = ingest([], extraction([np({ date: '2026-11-02', time: '04:55', merchant: '고양이모래 A', amount: 21750 }), np({ date: '2026-11-02', time: '04:55', merchant: '고양이모래 B', amount: 16050 })], 'pay_history')).db;
+    const r = ingest(db, extraction([{ date: '2026-11-02', merchant: '리본글로벌', amount: 37751, original_amount: 37800, payment_label: '네이버 현대카드' }]));
+    expect(r.decisions[0]!.action).toBe('duplicate');
+    expect(r.db).toHaveLength(2);
+  });
+
+  it('하이패스·교통카드 충전은 지출, 페이·지역화폐 충전은 이체', () => {
+    const cands = normalizeExtraction(extraction([np({ merchant: '하이패스 자동충전', amount: 50000 }), { merchant: '네이버페이 충전', amount: 50000 }]), ctx());
+    expect(cands.map((c) => c.kind)).toEqual(['expense', 'transfer']);
+  });
+
+  it('페이 이름은 결제수단으로 자동 연결하지 않는다(안에 든 카드가 진짜 결제수단)', () => {
+    expect(resolvePaymentMethod('네이버페이', null, [...methods, pm('pm-naver', '네이버 현대카드', 'credit_card')])).toBeNull();
+    expect(resolvePaymentMethod('네이버페이', null, [...methods, pm('pm-np', '네이버페이', 'easy_pay')])?.id).toBe('pm-np');
+  });
+});
+
 // ── 문자 ──────────────────────────────────────────────────────────────────
 describe('parseSms', () => {
   const today = '2026-11-14';

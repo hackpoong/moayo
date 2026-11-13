@@ -7,7 +7,7 @@ import { computeCashDate } from '../cashDate.ts';
 import { toKstDate } from '../kst.ts';
 import type { PaymentMethod, Transaction } from '../types.ts';
 import { isLocalCurrency } from './normalize.ts';
-import { merchantSimilarity } from './text.ts';
+import { isWrapperLabel, merchantSimilarity } from './text.ts';
 import type { Candidate, MatchAction } from './types.ts';
 
 export const MERGE_SCORE = 55;
@@ -46,9 +46,17 @@ export function scorePair(c: Candidate, t: Transaction, methods: readonly Paymen
   if (c.approval_no && t.approval_no) return c.approval_no === t.approval_no ? 100 : null;
 
   const tDate = toKstDate(t.occurred_at);
-  // 할인·부분취소 전 금액으로 맞추는 것은 같은 날일 때만(다른 날의 같은 금액 결제와 헷갈리지 않게).
-  const amountMatch = c.amount === t.amount || (c.original_amount !== null && c.original_amount === t.amount && tDate === c.date);
+  const sameDate = tDate === c.date;
+  // 할인·포인트·부분취소 전 금액으로 맞추는 것은 같은 날일 때만(다른 날의 같은 금액 결제와 헷갈리지 않게).
+  const amountMatch =
+    c.amount === t.amount ||
+    (sameDate &&
+      ((c.original_amount !== null && c.original_amount === t.amount) ||
+        (t.original_amount !== null && t.original_amount === c.amount) ||
+        (c.original_amount !== null && c.original_amount === t.original_amount)));
   if (!amountMatch) return null;
+  // 한쪽만 페이 앱 내역이면 이름·결제수단이 원래 다르게 찍힌다.
+  const oneWrapped = isWrapperLabel(c.payment_label) !== isWrapperLabel(t.payment_label);
 
   let score: number;
   if (c.has_time && t.has_time) {
@@ -67,7 +75,9 @@ export function scorePair(c: Candidate, t: Transaction, methods: readonly Paymen
 
   const cLabeled = !!(c.payment_method_id || c.payment_label);
   const tLabeled = !!(t.payment_method_id || t.payment_label);
-  if (c.payment_method_id && t.payment_method_id) {
+  if (oneWrapped) {
+    score += 10;
+  } else if (c.payment_method_id && t.payment_method_id) {
     if (c.payment_method_id !== t.payment_method_id) return null;
     score += 25;
   } else if (c.payment_label && t.payment_label && !c.payment_method_id && !t.payment_method_id) {
@@ -78,12 +88,16 @@ export function scorePair(c: Candidate, t: Transaction, methods: readonly Paymen
   }
 
   const sim = merchantSimilarity(c.merchant, t.merchant);
-  if (sim !== null) score += sim >= 0.6 ? 25 : sim < 0.3 ? -10 : 0;
+  if (sim !== null) score += sim >= 0.6 ? 25 : sim < 0.3 && !oneWrapped ? -10 : 0;
 
   if (c.kind !== t.kind) score -= 10;
 
+  // 페이 앱 내역과 카드·토스 내역: 같은 날 같은 금액이면 이름이 달라도 같은 결제로 본다.
+  if (oneWrapped && sameDate && score > 0 && score < MERGE_SCORE) score = MERGE_SCORE;
+
   void methods;
-  return score;
+  // 점수가 같으면 이름이 더 비슷한 쪽을 고르도록 작은 가산점.
+  return score + (sim ?? 0);
 }
 
 /** 지역화폐 결제 + 캐시백을 뺀 잔액 차감 줄 관계인지. 'cand-smaller' 면 후보가 작은 쪽(버림), 'tx-smaller' 면 기존이 작은 쪽(고침). */
@@ -109,7 +123,8 @@ export function matchCandidates(candidates: readonly Candidate[], existing: read
   const pool = existing.filter((t) => !t.deleted_at);
   const taken = new Set<string>();
   const decisions: Decision[] = [];
-  const createdByIndex = new Map<number, Transaction>();
+  /** 후보 번호 → 그 후보가 들어간(새로 만들었거나 합쳐진) 내역. 같은 원문 안의 의심 쌍을 잇는 데 쓴다. */
+  const seenByIndex = new Map<number, Transaction>();
 
   // 같은 원문 안의 의심 쌍은 상대 후보가 먼저 들어가야 연결할 수 있으므로 뒤로 미룬다.
   const ordered = [...candidates.filter((c) => c.suspect_of_index === null), ...candidates.filter((c) => c.suspect_of_index !== null)];
@@ -140,6 +155,7 @@ export function matchCandidates(candidates: readonly Candidate[], existing: read
     if (localHit?.rel === 'tx-smaller' && !isUserOwned(localHit.t)) {
       taken.add(localHit.t.id);
       decisions.push(merge(c, localHit.t, ctx, null, { correctAmount: true }));
+      seenByIndex.set(c.index, localHit.t);
       continue;
     }
 
@@ -154,13 +170,14 @@ export function matchCandidates(candidates: readonly Candidate[], existing: read
     if (best && best.score >= MERGE_SCORE) {
       taken.add(best.t.id);
       decisions.push(merge(c, best.t, ctx, best.score, { correctAmount: c.original_amount === best.t.amount }));
+      seenByIndex.set(c.index, best.t);
       continue;
     }
 
-    const suspectOf = c.suspect_of_index !== null ? createdByIndex.get(c.suspect_of_index) : undefined;
+    const suspectOf = c.suspect_of_index !== null ? seenByIndex.get(c.suspect_of_index) : undefined;
     const reviewTarget = best && best.score >= REVIEW_SCORE ? best.t : suspectOf;
     const tx = createTx(c, ctx, reviewTarget ?? null);
-    createdByIndex.set(c.index, tx);
+    seenByIndex.set(c.index, tx);
     decisions.push({
       candidate: c,
       action: reviewTarget ? 'review' : 'created',
@@ -171,7 +188,67 @@ export function matchCandidates(candidates: readonly Candidate[], existing: read
       reason: reviewTarget ? (tx.review?.reason ?? '') : '새 내역',
     });
   }
+  applyCombinedOrders(decisions, pool, taken);
   return decisions.sort((a, b) => a.candidate.index - b.candidate.index);
+}
+
+/** 합이 target 인 2~3개 묶음의 위치. 하루 건수가 적어서 전부 따져 봐도 된다. */
+function subsetSum(amounts: number[], target: number): number[] | null {
+  const n = Math.min(amounts.length, 12);
+  for (let i = 0; i < n; i++)
+    for (let j = i + 1; j < n; j++) {
+      if (amounts[i]! + amounts[j]! === target) return [i, j];
+      for (let k = j + 1; k < n; k++) if (amounts[i]! + amounts[j]! + amounts[k]! === target) return [i, j, k];
+    }
+  return null;
+}
+
+const isPlainExpense = (t: Pick<Transaction, 'kind' | 'status'>) => t.kind === 'expense' && t.status !== 'canceled';
+
+/**
+ * 페이 앱 주문 여러 건이 카드에서는 한 번에 결제되는 경우(네이버 주문 21,750 + 16,050 = 카드 37,800).
+ *  A) 새 페이 앱 주문들의 합 = 이미 있는 카드 결제 → 주문들은 넣지 않는다.
+ *  B) 새 카드 결제 = 이미 있는 페이 앱 주문들의 합 → 카드 결제는 넣지 않는다.
+ */
+function applyCombinedOrders(decisions: Decision[], pool: readonly Transaction[], taken: Set<string>): void {
+  const pending = () =>
+    decisions.filter((d) => d.action === 'created' && isWrapperLabel(d.candidate.payment_label) && isPlainExpense(d.candidate));
+  for (const t of pool) {
+    if (taken.has(t.id) || isWrapperLabel(t.payment_label) || !isPlainExpense(t)) continue;
+    const date = toKstDate(t.occurred_at);
+    const same = pending().filter((d) => d.candidate.date === date);
+    if (same.length < 2) continue;
+    for (const target of [t.amount, t.original_amount]) {
+      if (!target) continue;
+      const hit = subsetSum(same.map((d) => d.candidate.amount), target);
+      if (!hit) continue;
+      for (const i of hit) {
+        const d = same[i]!;
+        d.action = 'duplicate';
+        d.tx = t;
+        d.target_id = t.id;
+        d.reason = `${describe(t)}에 함께 결제된 주문이라 따로 넣지 않았습니다`;
+      }
+      taken.add(t.id);
+      break;
+    }
+  }
+  for (const d of decisions) {
+    if (d.action !== 'created' || isWrapperLabel(d.candidate.payment_label) || !isPlainExpense(d.candidate)) continue;
+    const wrapped = pool.filter((t) => !taken.has(t.id) && isWrapperLabel(t.payment_label) && isPlainExpense(t) && toKstDate(t.occurred_at) === d.candidate.date);
+    if (wrapped.length < 2) continue;
+    for (const target of [d.candidate.amount, d.candidate.original_amount]) {
+      if (!target) continue;
+      const hit = subsetSum(wrapped.map((t) => t.amount), target);
+      if (!hit) continue;
+      for (const i of hit) taken.add(wrapped[i]!.id);
+      d.action = 'duplicate';
+      d.tx = wrapped[hit[0]!]!;
+      d.target_id = d.tx.id;
+      d.reason = '이미 있는 페이 앱 주문 여러 건을 한 번에 결제한 내역이라 따로 넣지 않았습니다';
+      break;
+    }
+  }
 }
 
 function describe(t: Pick<Transaction, 'merchant' | 'amount'>): string {
@@ -190,6 +267,7 @@ function createTx(c: Candidate, ctx: MatchContext, suspect: Transaction | null):
     kind: c.kind,
     status,
     amount: c.amount,
+    original_amount: c.original_amount,
     occurred_at: c.occurred_at,
     has_time: c.has_time,
     cash_date: computeCashDate(c.date, method),
@@ -224,7 +302,20 @@ function merge(c: Candidate, t: Transaction, ctx: MatchContext, score: number | 
   const editable = !isUserOwned(t);
 
   if (!t.merchant && c.merchant) set('merchant', c.merchant);
-  if (!t.payment_label && c.payment_label) set('payment_label', c.payment_label);
+  if (t.original_amount === null && c.original_amount !== null && c.original_amount !== t.amount) set('original_amount', c.original_amount);
+  const cWrap = isWrapperLabel(c.payment_label);
+  const tWrap = isWrapperLabel(t.payment_label);
+  if (cWrap && !tWrap && c.merchant && (merchantSimilarity(c.merchant, t.merchant) ?? 0) < 0.6 && !isUserOwned(t) && !(t.memo ?? '').includes(c.merchant)) {
+    // 페이 앱의 실제 가게·상품 이름을 메모로 남긴다(카드에는 결제대행사 이름만 찍히는 경우가 많다).
+    set('memo', [t.memo, `${c.payment_label}: ${c.merchant}`].filter(Boolean).join(' · ').slice(0, 200));
+  }
+  if (tWrap && !cWrap && (c.payment_label || c.payment_method_id) && !isUserOwned(t)) {
+    // 먼저 들어온 페이 앱 내역에, 실제로 돈이 나간 카드·계좌를 채운다.
+    if (c.payment_label) set('payment_label', c.payment_label);
+    if (c.merchant && (merchantSimilarity(c.merchant, t.merchant) ?? 0) < 0.6 && !(t.memo ?? '').includes(t.merchant ?? '')) {
+      set('memo', [t.memo, `${t.payment_label}: ${t.merchant}`].filter(Boolean).join(' · ').slice(0, 200));
+    }
+  } else if (!t.payment_label && c.payment_label) set('payment_label', c.payment_label);
   if (!t.payment_method_id && c.payment_method_id) {
     set('payment_method_id', c.payment_method_id);
     if (!t.cash_date_override) {
