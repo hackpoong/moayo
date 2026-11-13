@@ -1,0 +1,12 @@
+# Supabase CLI 설정(로컬 개발용). 운영 프로젝트의 인증 설정은 대시보드에서 합니다(README 참고).
+project_id = "moayo"
+
+[auth]
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173/**", "http://localhost:4173/**"]
+
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+skip_nonce_check = false

@@ -1,0 +1,78 @@
+@import 'tailwindcss';
+
+/* 색은 의미 이름(bg, surface, fg …)으로만 쓴다. 다크 모드는 변수만 바꾸면 된다. */
+:root {
+  --app-bg: #f5f6f8;
+  --app-surface: #ffffff;
+  --app-surface-2: #f0f1f4;
+  --app-fg: #15171c;
+  --app-muted: #6b7280;
+  --app-line: #e4e6eb;
+  --app-brand: #4f46e5;
+  --app-brand-fg: #ffffff;
+  --app-brand-soft: #eef0ff;
+  --app-expense: #e5484d;
+  --app-income: #2f6fed;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --app-bg: #0f1115;
+    --app-surface: #181b21;
+    --app-surface-2: #21252d;
+    --app-fg: #eceef2;
+    --app-muted: #9aa1ad;
+    --app-line: #2a2f38;
+    --app-brand: #7c83ff;
+    --app-brand-fg: #0f1115;
+    --app-brand-soft: #23264a;
+    --app-expense: #ff6b6f;
+    --app-income: #6ea1ff;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR', 'Malgun Gothic',
+    'Segoe UI', sans-serif;
+  --color-bg: var(--app-bg);
+  --color-surface: var(--app-surface);
+  --color-surface-2: var(--app-surface-2);
+  --color-fg: var(--app-fg);
+  --color-muted: var(--app-muted);
+  --color-line: var(--app-line);
+  --color-brand: var(--app-brand);
+  --color-brand-fg: var(--app-brand-fg);
+  --color-brand-soft: var(--app-brand-soft);
+  --color-expense: var(--app-expense);
+  --color-income: var(--app-income);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--app-bg);
+  color: var(--app-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+/* 숫자는 자릿수 폭을 맞춰서 금액이 흔들리지 않게 한다. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
