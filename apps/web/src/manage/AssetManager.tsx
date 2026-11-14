@@ -5,7 +5,6 @@ import {
   formatWon,
   joinIconName,
   PAYMENT_METHOD_TYPE_LABEL,
-  PAYMENT_METHOD_TYPES,
   splitIconName,
   startDayOf,
   todayKst,
@@ -28,7 +27,7 @@ import { useToast } from '../components/toastContext.ts';
 import { Button } from '../components/ui.tsx';
 import { useData } from '../data/dataContext.ts';
 import { baseRow, useMutations } from '../data/mutations.ts';
-import { assetIcon, LINKABLE_TYPES } from '../lib/assets.ts';
+import { ASSET_GROUP_ORDER, assetIcon, LINKABLE_TYPES, PICKABLE_ASSET_TYPES } from '../lib/assets.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
 import { availableKey } from '../lib/vault.ts';
 import { seal } from '../lib/vaultCrypto.ts';
@@ -52,7 +51,7 @@ export function AssetList({ ordering, onEdit, ownerFilter }: { ordering: boolean
   const visible = data.paymentMethods.filter(
     (p) => !p.archived && (ownerFilter === 'all' || p.owner_member_id === ownerFilter || !p.owner_member_id),
   );
-  const groups = PAYMENT_METHOD_TYPES.map((t) => ({ type: t, items: visible.filter((p) => p.type === t) })).filter((g) => g.items.length);
+  const groups = ASSET_GROUP_ORDER.map((t) => ({ type: t, items: visible.filter((p) => p.type === t) })).filter((g) => g.items.length);
 
   const reorder = (ids: string[]) =>
     ids.forEach((id, i) => {
@@ -532,7 +531,7 @@ export function AssetEditor({
         <Sheet title="자산그룹" onClose={() => (type ? setPicking(false) : onClose())}>
           {(close) => (
             <ul className="-mx-5 divide-y divide-line">
-              {PAYMENT_METHOD_TYPES.map((t) => (
+              {(type === 'cash' ? [...PICKABLE_ASSET_TYPES, 'cash' as const] : PICKABLE_ASSET_TYPES).map((t) => (
                 <li key={t}>
                   <button
                     type="button"

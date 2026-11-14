@@ -3,7 +3,6 @@ import {
   formatAmount,
   hasOperator,
   PAYMENT_METHOD_TYPE_LABEL,
-  PAYMENT_METHOD_TYPES,
   type Category,
   type Member,
   type PaymentMethod,
@@ -11,7 +10,7 @@ import {
 } from '@moayo/core';
 import { ChevronDown, Delete, Pencil, Sparkles } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { assetIcon } from '../lib/assets.ts';
+import { ASSET_GROUP_ORDER, assetIcon } from '../lib/assets.ts';
 import { haptic } from '../lib/flash.ts';
 
 export type PanelKind = 'amount' | 'category' | 'asset';
@@ -255,7 +254,7 @@ export function CategoryPanel({
 }
 
 // ── 자산 ───────────────────────────────────────────────────────────────────
-const TYPE_ORDER: readonly PaymentMethodType[] = PAYMENT_METHOD_TYPES;
+const TYPE_ORDER: readonly PaymentMethodType[] = ASSET_GROUP_ORDER;
 
 export function AssetPanel({
   methods,

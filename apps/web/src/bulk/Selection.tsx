@@ -2,7 +2,6 @@ import {
   applyRename,
   formatWon,
   mergeTransactions,
-  PAYMENT_METHOD_TYPES,
   PAYMENT_METHOD_TYPE_LABEL,
   todayKst,
   toKstDate,
@@ -21,6 +20,7 @@ import { baseRow, newId, useMutations } from '../data/mutations.ts';
 import { assetIcon } from '../lib/assets.ts';
 import { suckInto } from '../lib/motion.ts';
 import { haptic } from '../lib/flash.ts';
+import { ASSET_GROUP_ORDER } from '../lib/assets.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
 import { SelectionContext, type SelectionApi } from './selectionContext.ts';
 import { duplicate, withDate } from './txEdit.ts';
@@ -277,7 +277,7 @@ function ActionSheet({ action, txs, onClose, onDone }: { action: Action; txs: Tr
                 ))}
               </div>
             ) : null}
-            {PAYMENT_METHOD_TYPES.map((type) => {
+            {ASSET_GROUP_ORDER.map((type) => {
               const items = list.filter((p) => p.type === type);
               if (!items.length) return null;
               return (
