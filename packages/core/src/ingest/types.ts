@@ -62,7 +62,7 @@ export interface ExtractedTender {
   label: string | null;
   amount: number;
   card_number_hint: string | null;
-  /** 포인트·마일리지 회원 이름(가려진 그대로, 예: 황*주). */
+  /** 포인트·마일리지 회원 이름(가려진 그대로, 예: 김*수). */
   holder: string | null;
 }
 

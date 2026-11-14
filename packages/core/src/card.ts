@@ -187,7 +187,7 @@ export function cardHintMatches(hint: string | null | undefined, number: string 
   return cardNumberTokens(hint).some((t) => tokenMatches(t, n || null, l4));
 }
 
-/** 영수증에 가려 찍힌 이름('황*주')이 이 이름과 같은지. 가림표 자리는 아무 글자나. */
+/** 영수증에 가려 찍힌 이름('김*수')이 이 이름과 같은지. 가림표 자리는 아무 글자나. */
 export function maskedNameMatches(masked: string, name: string): boolean {
   const m = [...masked.replace(/\s/g, '')];
   const n = [...name.replace(/\s/g, '')];

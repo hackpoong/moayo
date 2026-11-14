@@ -60,7 +60,7 @@ export const EXTRACTION_SCHEMA = {
                 label: { ...nullable('string'), description: '영수증에 적힌 결제수단 이름(예: 신한프리미엄, 신세계상품권, 마일리지사용)' },
                 amount: { type: 'integer', description: '이 결제수단으로 낸 금액(양수)' },
                 card_number_hint: { ...nullable('string'), description: '이 결제수단 줄의 카드번호 그대로(가림표 포함)' },
-                holder: { ...nullable('string'), description: '포인트·마일리지 회원 이름이 보이면 그대로(예: 황*주)' },
+                holder: { ...nullable('string'), description: '포인트·마일리지 회원 이름이 보이면 그대로(예: 김*수)' },
               },
             },
           },
