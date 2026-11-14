@@ -18,6 +18,7 @@ const emptyOverlay = (): Overlay => ({
   tags: new Map(),
   transfer_rules: new Map(),
   merchant_rules: new Map(),
+  recurring_rules: new Map(),
 });
 
 /** 기기 DB 결과 위에, 방금 저장해서 아직 기기 DB 에 안 들어간 행을 덮어씌운다. */
@@ -54,6 +55,8 @@ export function DataProvider({ userId, householdId, children }: { userId: string
   const categoriesRaw = useLiveQuery(() => db.categories.where('household_id').equals(householdId).toArray(), [db, householdId]);
   const tagsRaw = useLiveQuery(() => db.tags.where('household_id').equals(householdId).toArray(), [db, householdId]);
   const rulesRaw = useLiveQuery(() => db.transfer_rules.where('household_id').equals(householdId).toArray(), [db, householdId]);
+  const recurringRaw = useLiveQuery(() => db.recurring_rules.where('household_id').equals(householdId).toArray(), [db, householdId]);
+  const activityRaw = useLiveQuery(() => db.activity_log.where('household_id').equals(householdId).toArray(), [db, householdId]);
   const renamesRaw = useLiveQuery(() => db.merchant_rules.where('household_id').equals(householdId).toArray(), [db, householdId]);
   const membersRaw = useLiveQuery(() => db.members.where('household_id').equals(householdId).toArray(), [db, householdId]);
   const pendingCount = useLiveQuery(() => db.outbox.where('household_id').equals(householdId).count(), [db, householdId]);
@@ -85,6 +88,7 @@ export function DataProvider({ userId, householdId, children }: { userId: string
       tags: tagsRaw,
       transfer_rules: rulesRaw,
       merchant_rules: renamesRaw,
+      recurring_rules: recurringRaw,
     };
     // 외부(기기 DB) 결과에 맞춰 덮어쓴 행을 정리하는 것이라 effect 안에서 상태를 바꾼다.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -111,7 +115,7 @@ export function DataProvider({ userId, householdId, children }: { userId: string
       }
       return changed ? next : prev;
     });
-  }, [transactionsRaw, paymentMethodsRaw, categoriesRaw, tagsRaw, rulesRaw, renamesRaw]);
+  }, [transactionsRaw, paymentMethodsRaw, categoriesRaw, tagsRaw, rulesRaw, renamesRaw, recurringRaw]);
 
   const txState = useMemo(() => {
     const rows = merge(transactionsRaw, overlay.transactions);
@@ -133,6 +137,8 @@ export function DataProvider({ userId, householdId, children }: { userId: string
   const tagsAll = useMemo(() => merge(tagsRaw, overlay.tags), [tagsRaw, overlay.tags]);
   const rules = useMemo(() => merge(rulesRaw, overlay.transfer_rules), [rulesRaw, overlay.transfer_rules]);
   const renames = useMemo(() => merge(renamesRaw, overlay.merchant_rules), [renamesRaw, overlay.merchant_rules]);
+  const recurring = useMemo(() => merge(recurringRaw, overlay.recurring_rules), [recurringRaw, overlay.recurring_rules]);
+  const activity = useMemo(() => (activityRaw ?? []).slice().sort((a, b) => b.created_at.localeCompare(a.created_at)), [activityRaw]);
 
   const lookups = useMemo(() => {
     if (!paymentMethodsAll || !categoriesAll || !tagsAll || !membersRaw) return null;
@@ -157,11 +163,13 @@ export function DataProvider({ userId, householdId, children }: { userId: string
       transactions: txState.transactions,
       mergedInto: txState.mergedInto,
       merchantRules: live(renames ?? []),
+      recurringRules: live(recurring ?? []),
+      activity,
       transferRules: live(rules as TransferRule[]),
       pendingCount: pendingCount ?? 0,
       ...lookups,
     };
-  }, [txState, lookups, rules, renames, pendingCount]);
+  }, [txState, lookups, rules, renames, recurring, activity, pendingCount]);
 
   const value = useMemo<DataContextValue>(
     () => ({ db, engine, householdId, data, status, applyOptimistic, settleOptimistic }),

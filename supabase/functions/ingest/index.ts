@@ -324,6 +324,8 @@ async function ingest(admin: SupabaseClient, body: IngestBody, userId: string, m
         delete row.updated_at;
         if (d.action !== 'merged') row.created_by = userId;
         else delete row.created_by;
+        // 기록에 '누가 불러왔는지' 남기도록.
+        row.updated_by = userId;
         return row;
       });
     if (toWrite.length) {

@@ -18,6 +18,7 @@ import { PaymentMethodsPage } from '../pages/settings/PaymentMethods.tsx';
 import { TagsPage } from '../pages/settings/Tags.tsx';
 import { TransferRulesPage } from '../pages/settings/TransferRules.tsx';
 import { RenameRulesPage } from '../pages/settings/RenameRules.tsx';
+import { RecurringPage } from '../pages/settings/Recurring.tsx';
 import { SetupNeeded } from '../pages/SetupNeeded.tsx';
 import { Transactions } from '../pages/Transactions.tsx';
 import { Shell } from './Shell.tsx';
@@ -54,6 +55,7 @@ export function App() {
             <Route path="/more/payment-methods" element={<PaymentMethodsPage />} />
             <Route path="/more/categories" element={<CategoriesPage />} />
             <Route path="/more/rename-rules" element={<RenameRulesPage />} />
+            <Route path="/more/recurring" element={<RecurringPage />} />
             <Route path="/more/tags" element={<TagsPage />} />
             <Route path="/more/transfer-rules" element={<TransferRulesPage />} />
             <Route path="/more/export" element={<ExportPage />} />

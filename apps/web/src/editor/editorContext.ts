@@ -8,6 +8,10 @@ export interface EditorRequest {
   date?: DateString;
   /** 사진·문구 자동 입력 화면을 연다. */
   importMode?: 'image' | 'text';
+  /** 자동 입력에 미리 넣을 문구(클립보드·공유). */
+  text?: string;
+  /** 자동 입력에 미리 넣을 사진(갤러리 공유). */
+  files?: File[];
 }
 
 export const EditorContext = createContext<((req?: EditorRequest) => void) | null>(null);

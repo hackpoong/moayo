@@ -1,4 +1,4 @@
-import type { Category, Member, MerchantRule, PaymentMethod, Tag, Transaction, TransferRule } from '@moayo/core';
+import type { ActivityEntry, Category, Member, MerchantRule, PaymentMethod, RecurringRule, Tag, Transaction, TransferRule } from '@moayo/core';
 import { createContext, useContext } from 'react';
 import type { LocalDb, PushTable, RowByTable } from './localDb.ts';
 import type { SyncEngine, SyncStatus } from './sync.ts';
@@ -9,6 +9,9 @@ export interface HouseholdData {
   /** 합친 내역 id → 합쳐진 원래 내역들. */
   mergedInto: Map<string, Transaction[]>;
   merchantRules: MerchantRule[];
+  recurringRules: RecurringRule[];
+  /** 서버 기록, 최근 것이 앞. */
+  activity: ActivityEntry[];
   paymentMethods: PaymentMethod[];
   categories: Category[];
   tags: Tag[];
@@ -48,6 +51,8 @@ const EMPTY: HouseholdData = {
   transactions: [],
   mergedInto: new Map(),
   merchantRules: [],
+  recurringRules: [],
+  activity: [],
   paymentMethods: [],
   categories: [],
   tags: [],

@@ -141,6 +141,43 @@ export interface MerchantRule extends SyncedRow {
   created_by: Uuid | null;
 }
 
+export type ActivityAction = 'import' | 'create' | 'update' | 'delete' | 'restore' | 'merge';
+
+/** 서버가 남기는 기록(읽기만). */
+export interface ActivityEntry extends SyncedRow {
+  member_id: Uuid | null;
+  action: ActivityAction;
+  tx_id: Uuid | null;
+  tx_label: string | null;
+  kind: string | null;
+  amount: number | null;
+  summary: string | null;
+}
+
+/** 정기 지출: 매달 day_of_month 에 template 대로 내역을 만든다. */
+export interface RecurringRule extends SyncedRow {
+  template: RecurringTemplate;
+  day_of_month: number;
+  start_month: string;
+  times: number | null;
+  last_generated_month: string | null;
+  paused: boolean;
+  created_by: Uuid | null;
+}
+
+export interface RecurringTemplate {
+  kind: 'expense' | 'income' | 'transfer';
+  amount: number;
+  merchant: string | null;
+  memo: string | null;
+  splits: Split[];
+  payment_method_id: Uuid | null;
+  member_id: Uuid | null;
+  tag_ids: Uuid[];
+  /** 'HH:MM' 이면 그 시각, null 이면 시각 없음. */
+  time: string | null;
+}
+
 export type TransactionKind = 'expense' | 'income' | 'transfer';
 /** merged: 다른 내역으로 합쳐짐(목록·합계에서 빠지고 linked_tx_id 가 합친 내역). */
 export type TransactionStatus = 'confirmed' | 'review' | 'canceled' | 'merged';

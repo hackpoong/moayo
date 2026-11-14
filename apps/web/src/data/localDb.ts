@@ -1,15 +1,15 @@
 // 기기 안의 복제본(IndexedDB). 화면은 이것만 읽으므로 네트워크를 기다리지 않는다.
 // 사용자마다 DB 를 따로 둬서, 한 기기에서 계정을 바꿔도 데이터가 섞이지 않는다.
 
-import type { Category, Member, MerchantRule, PaymentMethod, Tag, Transaction, TransferRule } from '@moayo/core';
+import type { ActivityEntry, Category, Member, MerchantRule, PaymentMethod, RecurringRule, Tag, Transaction, TransferRule } from '@moayo/core';
 import Dexie, { type Table } from 'dexie';
 
 /** 클라이언트가 서버로 올리는 테이블. */
-export const PUSH_TABLES = ['payment_methods', 'categories', 'tags', 'transfer_rules', 'merchant_rules', 'transactions'] as const;
+export const PUSH_TABLES = ['payment_methods', 'categories', 'tags', 'transfer_rules', 'merchant_rules', 'recurring_rules', 'transactions'] as const;
 export type PushTable = (typeof PUSH_TABLES)[number];
 
 /** 서버에서 받아 오는 테이블(구성원은 읽기만). */
-export const PULL_TABLES = [...PUSH_TABLES, 'members'] as const;
+export const PULL_TABLES = [...PUSH_TABLES, 'members', 'activity_log'] as const;
 export type PullTable = (typeof PULL_TABLES)[number];
 
 export interface RowByTable {
@@ -18,8 +18,10 @@ export interface RowByTable {
   tags: Tag;
   transfer_rules: TransferRule;
   merchant_rules: MerchantRule;
+  recurring_rules: RecurringRule;
   transactions: Transaction;
   members: Member;
+  activity_log: ActivityEntry;
 }
 
 /** 아직 서버에 올리지 못한 변경. 같은 행은 하나로 합쳐진다. */
@@ -43,6 +45,8 @@ export class LocalDb extends Dexie {
   tags!: Table<Tag, string>;
   transfer_rules!: Table<TransferRule, string>;
   merchant_rules!: Table<MerchantRule, string>;
+  recurring_rules!: Table<RecurringRule, string>;
+  activity_log!: Table<ActivityEntry, string>;
   transactions!: Table<Transaction, string>;
   members!: Table<Member, string>;
   outbox!: Table<OutboxEntry, [string, string]>;
@@ -61,6 +65,7 @@ export class LocalDb extends Dexie {
       meta: 'key',
     });
     this.version(2).stores({ merchant_rules: 'id, household_id' });
+    this.version(3).stores({ recurring_rules: 'id, household_id', activity_log: 'id, household_id, tx_id' });
   }
 
   rows<T extends PullTable>(table: T): Table<RowByTable[T], string> {

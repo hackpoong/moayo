@@ -1,6 +1,6 @@
 import { formatWon, toKstDate, type Transaction } from '@moayo/core';
 import { CircleAlert, CircleCheck, Copy, ImagePlus, LoaderCircle, MessageSquareText, Plus, RefreshCw } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Segmented } from '../components/bits.tsx';
 import { Sheet } from '../components/Sheet.tsx';
 import { Button } from '../components/ui.tsx';
@@ -116,12 +116,24 @@ async function prepare(file: File): Promise<Piece[]> {
 }
 
 /** 사진·캡처·문자를 넣으면 AI 가 정리해서 바로 내역에 넣는다. */
-export function ImportSheet({ initialMode = 'image', onClose }: { initialMode?: Mode; onClose: () => void }) {
+export function ImportSheet({
+  initialMode = 'image',
+  initialText,
+  initialFiles,
+  onClose,
+}: {
+  initialMode?: Mode;
+  /** 클립보드·공유로 들어온 문구. */
+  initialText?: string;
+  /** 갤러리에서 '공유 → 모아요'로 들어온 사진. */
+  initialFiles?: File[];
+  onClose: () => void;
+}) {
   const household = useCurrentHousehold();
   const { engine } = useDataContext();
   const { aiQuality } = usePrefs();
   const [mode, setMode] = useState<Mode>(initialMode);
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initialText ?? '');
   const [jobs, setJobs] = useState<Job[]>([]);
   const running = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -156,7 +168,7 @@ export function ImportSheet({ initialMode = 'image', onClose }: { initialMode?: 
     running.current = false;
   };
 
-  const addFiles = (files: FileList | null) => {
+  const addFiles = (files: FileList | File[] | null | undefined) => {
     const quality: AiQuality = aiQuality;
     if (!files?.length) return;
     const month = new Date().toISOString().slice(0, 7);
@@ -215,6 +227,15 @@ export function ImportSheet({ initialMode = 'image', onClose }: { initialMode?: 
       // 권한이 없으면 사용자가 직접 붙여 넣는다.
     }
   };
+
+  // 공유로 들어온 사진은 열자마자 읽기 시작한다(한 번만).
+  const startedShare = useRef(false);
+  useEffect(() => {
+    if (startedShare.current || !initialFiles?.length) return;
+    startedShare.current = true;
+    addFiles(initialFiles);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const retry = (job: Job) => void runQueue([job]);
   const busy = jobs.some((j) => j.state === 'uploading' || j.state === 'reading' || j.state === 'waiting');

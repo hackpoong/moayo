@@ -1,5 +1,7 @@
 import { formatWon, inRange, monthRange, todayKst, totals } from '@moayo/core';
-import { ChevronRight, CircleAlert } from 'lucide-react';
+import { ChevronRight, CircleAlert, History } from 'lucide-react';
+import { useState } from 'react';
+import { ActivityLogSheet } from '../components/ActivityLog.tsx';
 import { Link } from 'react-router';
 import { BasisToggle, EmptyState } from '../components/bits.tsx';
 import { InstallPrompt } from '../components/InstallPrompt.tsx';
@@ -23,6 +25,7 @@ export function Home() {
   const t = totals(inRange(entries, from, to));
   const reviewCount = data.transactions.filter((tx) => tx.status === 'review').length;
   const recent = data.transactions.slice(0, 8);
+  const [logOpen, setLogOpen] = useState(false);
 
   return (
     <div className="space-y-4">
@@ -31,8 +34,14 @@ export function Home() {
           <p className="text-sm text-muted">{household.householdName}</p>
           <h1 className="text-2xl font-bold">{Number(month.slice(5))}월 가계부</h1>
         </div>
-        <BasisToggle basis={basis} />
+        <div className="flex items-center gap-1">
+          <button type="button" aria-label="기록 보기" onClick={() => setLogOpen(true)} className="press flex size-10 items-center justify-center rounded-full text-muted">
+            <History className="size-5" aria-hidden />
+          </button>
+          <BasisToggle basis={basis} />
+        </div>
       </header>
+      {logOpen ? <ActivityLogSheet onClose={() => setLogOpen(false)} /> : null}
 
       <section className="rounded-2xl bg-surface p-5">
         <p className="text-sm text-muted">{basis === 'cash' ? '이번 달 나간 돈' : '이번 달 쓴 돈'}</p>

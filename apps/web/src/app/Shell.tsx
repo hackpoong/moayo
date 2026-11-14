@@ -7,6 +7,9 @@ import { BulkRenameProvider } from '../bulk/BulkRename.tsx';
 import { SelectionProvider } from '../bulk/Selection.tsx';
 import { Logo } from '../components/ui.tsx';
 import { DataProvider } from '../data/DataProvider.tsx';
+import { useRecurringGenerator } from '../data/useRecurringGenerator.ts';
+import { useClipboardOffer, useSharedInbox } from '../lib/inbound.ts';
+import { useToast } from '../components/toastContext.ts';
 import { EditorContext, type EditorRequest } from '../editor/editorContext.ts';
 import { ImportSheet } from '../editor/ImportSheet.tsx';
 import { TransactionEditor } from '../editor/TransactionEditor.tsx';
@@ -47,9 +50,13 @@ export function Shell() {
 
 function ShellLayout() {
   const household = useCurrentHousehold();
+  useRecurringGenerator();
   const [editor, setEditor] = useState<{ key: number; request: EditorRequest } | null>(null);
   const openEditor = useCallback((request: EditorRequest = {}) => setEditor({ key: Date.now(), request }), []);
   const closeEditor = useCallback(() => setEditor(null), []);
+  const toast = useToast();
+  useSharedInbox(openEditor);
+  useClipboardOffer(openEditor, toast);
 
   return (
     <EditorContext.Provider value={openEditor}>
@@ -138,7 +145,7 @@ function ShellLayout() {
         </div>
       </div>
       {editor?.request.importMode ? (
-        <ImportSheet key={editor.key} initialMode={editor.request.importMode} onClose={closeEditor} />
+        <ImportSheet key={editor.key} initialMode={editor.request.importMode} initialText={editor.request.text} initialFiles={editor.request.files} onClose={closeEditor} />
       ) : editor ? (
         <TransactionEditor key={editor.key} request={editor.request} onClose={closeEditor} />
       ) : null}

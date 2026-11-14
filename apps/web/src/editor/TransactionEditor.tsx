@@ -25,7 +25,7 @@ import {
   type Transaction,
   type TransactionKind,
 } from '@moayo/core';
-import { ArrowLeft, ArrowLeftRight, Camera, MessageSquareText, Plus, Sparkles, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, Camera, History, MessageSquareText, Plus, Repeat, Sparkles, Trash2, X } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { MemberBadge } from '../components/MemberBadge.tsx';
 import { Sheet } from '../components/Sheet.tsx';
@@ -43,10 +43,12 @@ import { AmountPanel, AssetPanel, CategoryPanel, type PanelKind } from './InputP
 import { AssetManagerSheet } from '../manage/AssetManager.tsx';
 import { CategoryManagerSheet } from '../manage/CategoryManager.tsx';
 import { VoiceButton } from './VoiceButton.tsx';
+import { RepeatSheet } from './RepeatSheet.tsx';
+import { ActivityLogSheet } from '../components/ActivityLog.tsx';
+import { ACTION_LABEL, whenLabel } from '../lib/activity.ts';
 
 type PayRow = { payment_method_id: string | null; member_id: string | null; amount: number };
 
-const INSTALLMENTS = [1, 2, 3, 4, 5, 6, 10, 12, 24];
 
 const KIND_STYLE: Record<TransactionKind, string> = {
   income: 'border-income text-income',
@@ -105,6 +107,11 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   const [viewingMemberId, setViewingMemberId] = useState<string | null>(null);
   const [adding, setAdding] = useState<'category' | 'asset' | null>(null);
   const [savedCount, setSavedCount] = useState(0);
+  const [logOpen, setLogOpen] = useState(false);
+  const [repeatOpen, setRepeatOpen] = useState(false);
+  // 반복: 매달 같은 날 자동으로 기록. times 가 null 이면 끝 없음.
+  const [repeat, setRepeat] = useState<{ on: boolean; times: number | null }>({ on: false, times: null });
+  const sourceRule = original?.field_sources.recurring_rule ? data.recurringRules.find((r) => r.id === original.field_sources.recurring_rule) : undefined;
 
   const amount = evalAmountExpression(amountExpr) ?? 0;
   const categoryKind = kind === 'income' ? 'income' : 'expense';
@@ -376,10 +383,37 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
     });
   };
 
+  /** 반복을 켜고 저장하면 정기 지출 규칙도 만든다(이번 달은 지금 저장한 내역이 첫 번째). */
+  const saveRepeat = (row: Transaction) => {
+    if (!repeat.on || original) return;
+    const date0 = toKstDate(row.occurred_at);
+    void save('recurring_rules', {
+      ...baseRow(me.householdId),
+      template: {
+        kind: row.kind,
+        amount: row.amount,
+        merchant: row.merchant,
+        memo: row.memo,
+        splits: row.splits,
+        payment_method_id: row.payment_method_id,
+        member_id: row.member_id,
+        tag_ids: row.tag_ids,
+        time: row.has_time ? toKstTime(row.occurred_at) : null,
+      },
+      day_of_month: Number(date0.slice(8, 10)),
+      start_month: date0.slice(0, 7),
+      times: repeat.times,
+      last_generated_month: date0.slice(0, 7),
+      paused: false,
+      created_by: null,
+    });
+  };
+
   const submit = (close: () => void) => {
     if (!valid) return;
     const row = buildRow();
     persist(row);
+    saveRepeat(row);
     close();
     if (original) askBulkRename(original, row);
   };
@@ -387,7 +421,10 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   /** 저장하고 바로 다음 입력. 날짜·자산·쓴 사람은 그대로 두고 나머지는 비운다. */
   const submitAndContinue = () => {
     if (!valid) return;
-    persist(buildRow());
+    const row = buildRow();
+    persist(row);
+    saveRepeat(row);
+    setRepeat({ on: false, times: null });
     setSavedCount((n) => n + 1);
     setTitle('');
     setAmountExpr('');
@@ -408,6 +445,8 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
     close();
   };
 
+  const lastLog = original ? data.activity.find((a) => a.tx_id === original.id) : undefined;
+  const lastLogMember = lastLog?.member_id ? data.byId.member.get(lastLog.member_id) : null;
   const mergedChildren = original ? (data.mergedInto.get(original.id) ?? []) : [];
   const unmerge = (close: () => void) => {
     if (!original) return;
@@ -531,6 +570,11 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
               {savedCount ? <span className="ml-2 text-sm font-medium text-muted">{savedCount}건 저장함</span> : null}
             </h2>
             {original ? (
+              <button type="button" aria-label="이 내역의 기록" onClick={() => setLogOpen(true)} className="press flex size-11 items-center justify-center rounded-full text-muted">
+                <History className="size-5" aria-hidden />
+              </button>
+            ) : null}
+            {original ? (
               <button type="button" aria-label="지우기" onClick={() => destroy(close)} className="press flex size-11 items-center justify-center rounded-full text-muted">
                 <Trash2 className="size-5" aria-hidden />
               </button>
@@ -596,21 +640,14 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
                   <input type="time" aria-label="시각" value={time} onChange={(e) => setTime(e.target.value)} className="absolute inset-0 opacity-0" />
                 </label>
               </div>
-              <label
-                className={`relative ml-auto flex flex-col items-center text-[11px] ${isCredit && !payMulti ? 'text-brand' : 'text-muted/50'}`}
-                onClick={() => payMulti && toast({ message: '자산을 여러 개 고르면 할부를 쓸 수 없어요.' })}
+              <button
+                type="button"
+                onClick={() => setRepeatOpen(true)}
+                className={`press ml-auto flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[13px] font-semibold ${repeat.on || (installments > 1 && isCredit && !payMulti) || sourceRule ? 'bg-brand-soft text-brand' : 'text-muted'}`}
               >
-                <span className="text-sm font-semibold">{installments > 1 && isCredit && !payMulti ? `${installments}개월` : '할부'}</span>
-                {isCredit && !payMulti ? (
-                  <select aria-label="할부" value={installments} onChange={(e) => setInstallments(Number(e.target.value))} className="absolute inset-0 opacity-0">
-                    {INSTALLMENTS.map((n) => (
-                      <option key={n} value={n}>
-                        {n === 1 ? '일시불' : `${n}개월`}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
-              </label>
+                {repeat.on || sourceRule ? <Repeat className="size-3.5" aria-hidden /> : null}
+                {repeat.on ? `매달 ${Number(date.slice(8, 10))}일` : sourceRule ? '정기' : installments > 1 && isCredit && !payMulti ? `${installments}개월` : '반복/할부'}
+              </button>
             </Row>
 
             {/* 2) 제목 */}
@@ -845,7 +882,14 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
             </details>
           ) : null}
 
-          {original && original.source !== 'manual' ? (
+          {original && lastLog ? (
+            <p className="flex items-center gap-1.5 text-xs font-normal text-muted">
+              {lastLogMember ? <MemberBadge member={lastLogMember} /> : null}
+              {ACTION_LABEL[lastLog.action]} · {whenLabel(lastLog.created_at)}
+              {original.source !== 'manual' ? ' · 자동으로 들어온 내역' : ''}
+            </p>
+          ) : null}
+          {original && !lastLog && original.source !== 'manual' ? (
             <p className="text-xs text-muted">
               자동으로 들어온 내역입니다{original.field_sources.user_edited ? ' · 직접 고침' : ''}
             </p>
@@ -854,6 +898,21 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         )}
       </Sheet>
 
+      {logOpen && original ? <ActivityLogSheet txId={original.id} onClose={() => setLogOpen(false)} /> : null}
+      {repeatOpen ? (
+        <RepeatSheet
+          day={Number(date.slice(8, 10))}
+          repeat={repeat}
+          onRepeat={setRepeat}
+          canRepeat={!original}
+          sourceRule={sourceRule}
+          onStopRule={() => sourceRule && void save('recurring_rules', { ...sourceRule, paused: true })}
+          installments={installments}
+          onInstallments={setInstallments}
+          installmentState={!isCredit ? 'not-credit' : payMulti ? 'multi' : 'ok'}
+          onClose={() => setRepeatOpen(false)}
+        />
+      ) : null}
       {adding === 'category' ? <CategoryManagerSheet kind={categoryKind} onClose={() => setAdding(null)} /> : null}
       {adding === 'asset' ? <AssetManagerSheet defaultOwnerId={activeMembers.length > 1 ? (viewingMember?.id ?? null) : null} onClose={() => setAdding(null)} /> : null}
     </>

@@ -1,4 +1,4 @@
-import { ArrowLeftRight, ChevronRight, CreditCard, Download, Hash, LayoutGrid, LogOut, Sparkles, Wand2, type LucideIcon } from 'lucide-react';
+import { ArrowLeftRight, ChevronRight, CreditCard, Download, Hash, LayoutGrid, LogOut, Repeat, Sparkles, Wand2, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import { SyncBadge } from '../components/SyncBadge.tsx';
 import { Button, Card } from '../components/ui.tsx';
@@ -13,6 +13,7 @@ const SETTINGS: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/more/categories', label: '분류', icon: LayoutGrid },
   { to: '/more/tags', label: '태그', icon: Hash },
   { to: '/more/transfer-rules', label: '이체(지출 아님) 대상', icon: ArrowLeftRight },
+  { to: '/more/recurring', label: '정기 지출', icon: Repeat },
   { to: '/more/rename-rules', label: '자동 바꾸기 규칙', icon: Wand2 },
   { to: '/more/export', label: '내보내기·백업', icon: Download },
   { to: '/more/ai-usage', label: 'AI 사용량·비용', icon: Sparkles },

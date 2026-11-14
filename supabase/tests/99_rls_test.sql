@@ -233,5 +233,24 @@ select test.login(:'carol');
 select test.ok((select count(*) from public.merchant_rules) = 0, '캐럴: 다른 가족 규칙 안 보임');
 select test.login(:'alice');
 
+-- ── 기록: 누가 만들고 고쳤는지 ───────────────────────────────────────────
+insert into public.transactions (id, household_id, kind, amount, occurred_at, cash_date, merchant)
+values ('66666666-6666-6666-6666-666666666666', :'ha', 'expense', 800, now(), current_date, '에브리포터블');
+select test.ok((select action from public.activity_log where tx_id = '66666666-6666-6666-6666-666666666666' order by created_at limit 1) = 'create', '기록: 만들기');
+select test.ok((select m.display_name from public.activity_log a join public.members m on m.id = a.member_id
+  where a.tx_id = '66666666-6666-6666-6666-666666666666' limit 1) = '앨리스', '기록: 만든 사람');
+update public.transactions set merchant = '휴대폰충전' where id = '66666666-6666-6666-6666-666666666666';
+select test.ok((select summary from public.activity_log where tx_id = '66666666-6666-6666-6666-666666666666' and action = 'update') = '제목 에브리포터블 → 휴대폰충전',
+  '기록: 고친 칸 요약');
+update public.transactions set merchant = '휴대폰충전' where id = '66666666-6666-6666-6666-666666666666';
+select test.ok((select count(*) from public.activity_log where tx_id = '66666666-6666-6666-6666-666666666666') = 2, '기록: 같은 값으로 다시 저장하면 남기지 않음');
+select test.ok(test.throws(format($$insert into public.activity_log (household_id, action) values (%L, 'create')$$, :'ha')), '기록은 직접 쓸 수 없음');
+select test.ok((select updated_by from public.transactions where id = '66666666-6666-6666-6666-666666666666') = :'alice', '마지막으로 고친 사람');
+insert into public.recurring_rules (household_id, template, day_of_month, start_month) values (:'ha', '{"amount": 55000}', 25, '2026-11');
+select test.ok((select count(*) from public.recurring_rules) = 1, '정기 지출 규칙 추가');
+select test.login(:'carol');
+select test.ok((select count(*) from public.activity_log where household_id = :'ha') = 0 and (select count(*) from public.recurring_rules) = 0, '캐럴: 다른 가족 기록·규칙 안 보임');
+select test.login(:'alice');
+
 reset role;
 \echo 'ALL DB TESTS PASSED'
