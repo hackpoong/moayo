@@ -20,6 +20,8 @@ interface Tab {
   label: string;
   icon: LucideIcon;
   end?: boolean;
+  /** 고른 탭에서 아이콘 안을 채울지(선 아이콘만인 것은 안 채움). */
+  fill?: boolean;
 }
 
 // 입력 화면·불러오기 화면은 따로 받는다(첫 화면을 가볍게). 한가할 때 미리 받아 두어 + 를 누르면 바로 뜬다.
@@ -36,10 +38,10 @@ if (typeof window !== 'undefined') {
 }
 
 const TABS: Tab[] = [
-  { to: '/', label: '홈', icon: House, end: true },
+  { to: '/', label: '홈', icon: House, end: true, fill: true },
   { to: '/transactions', label: '내역', icon: List },
-  { to: '/calendar', label: '달력', icon: CalendarDays },
-  { to: '/stats', label: '통계', icon: ChartPie },
+  { to: '/calendar', label: '달력', icon: CalendarDays, fill: true },
+  { to: '/stats', label: '통계', icon: ChartPie, fill: true },
   { to: '/more', label: '더보기', icon: Ellipsis },
 ];
 
@@ -139,11 +141,18 @@ function ShellLayout() {
                     end={tab.end}
                     viewTransition
                     className={({ isActive }) =>
-                      `flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium ${isActive ? 'text-brand' : 'text-muted'}`
+                      `flex h-16 flex-col items-center justify-center gap-0.5 text-[11px] ${isActive ? 'font-bold text-brand' : 'font-medium text-muted'}`
                     }
                   >
-                    <tab.icon className="size-6" aria-hidden />
-                    {tab.label}
+                    {({ isActive }) => (
+                      <>
+                        {/* 고른 탭: 아이콘 뒤 연한 알약 + 채운 아이콘 */}
+                        <span className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors ${isActive ? 'bg-brand-soft' : ''}`}>
+                          <tab.icon className="size-6" fill={isActive && tab.fill ? 'currentColor' : 'none'} fillOpacity={0.18} strokeWidth={isActive ? 2.25 : 2} aria-hidden />
+                        </span>
+                        {tab.label}
+                      </>
+                    )}
                   </NavLink>
                 </li>
               ))}

@@ -77,12 +77,12 @@ export function TxRow({ tx, amount }: { tx: Transaction; amount?: number }) {
       }}
       aria-pressed={selection.active ? selected : undefined}
       style={dx ? { transform: `translateX(${dx}px)` } : undefined}
-      className={`relative flex w-full touch-pan-y select-none items-center gap-3 px-2 py-2 text-left transition-[background-color] ${dx ? '' : 'transition-transform'} ${
+      className={`relative flex w-full touch-pan-y select-none items-center gap-3 px-2 py-1.5 text-left transition-[background-color] ${dx ? '' : 'transition-transform'} ${
         selected ? 'bg-brand-soft' : 'bg-surface active:bg-surface-2'
       } ${flashing ? 'row-flash' : ''}`}
     >
       {tx.kind === 'transfer' && !titleParts.icon ? (
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-transfer" aria-hidden>
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-transfer" aria-hidden>
           <ArrowLeftRight className="size-5" />
         </span>
       ) : (

@@ -1,4 +1,4 @@
-import { formatWon, inRange, monthRange, todayKst, totals } from '@moayo/core';
+import { clampDay, formatDate, formatWon, inRange, monthRange, parseDate, shiftMonth, todayKst, totals, type LedgerEntry, type Member } from '@moayo/core';
 import { ChevronRight, CircleAlert, History } from 'lucide-react';
 import { useState } from 'react';
 import { ActivityLogSheet } from '../components/ActivityLog.tsx';
@@ -11,6 +11,7 @@ import { useData, useDataReady } from '../data/dataContext.ts';
 import { useLedger } from '../data/useLedger.ts';
 import { useOpenEditor } from '../editor/editorContext.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
+import { memberColor } from '../lib/members.ts';
 import { usePrefs } from '../lib/prefs.ts';
 
 export function Home() {
@@ -46,6 +47,8 @@ export function Home() {
       <section className="rounded-2xl bg-surface p-5">
         <p className="text-sm text-muted">{basis === 'cash' ? '이번 달 나간 돈' : '이번 달 쓴 돈'}</p>
         <p className="tabular mt-1 text-3xl font-bold">{formatWon(t.expense)}</p>
+        <VsLastMonth entries={entries} month={month} />
+        <MemberShare entries={inRange(entries, from, to)} members={data.members} />
         <div className="tabular mt-3 flex gap-4 text-sm">
           <span className="text-muted">
             수입 <b className="text-income">{formatWon(t.income)}</b>
@@ -113,6 +116,59 @@ function RowSkeleton() {
           <span className="h-4 w-16 rounded bg-surface-2" />
         </div>
       ))}
+    </div>
+  );
+}
+
+/** 지난달 같은 날까지 쓴 돈과 비교: ▲ 더 씀(빨강) / ▼ 덜 씀(초록). */
+function VsLastMonth({ entries, month }: { entries: readonly LedgerEntry[]; month: string }) {
+  const today = todayKst();
+  const { from } = monthRange(month);
+  const prev = shiftMonth(month, -1);
+  const { y, m } = parseDate(`${prev}-01`);
+  const prevFrom = monthRange(prev).from;
+  const prevTo = formatDate(y, m, clampDay(y, m, parseDate(today).d));
+  const now = totals(inRange(entries, from, today)).expense;
+  const before = totals(inRange(entries, prevFrom, prevTo)).expense;
+  const diff = now - before;
+  if (!before) return null;
+  return (
+    <p className="tabular mt-1 text-[13px] text-muted">
+      지난달 이맘때보다{' '}
+      {diff === 0 ? (
+        <b className="text-fg">같아요</b>
+      ) : (
+        <b className={diff > 0 ? 'text-expense' : 'text-emerald-600 dark:text-emerald-400'}>
+          {diff > 0 ? '▲' : '▼'} {formatWon(Math.abs(diff))}
+        </b>
+      )}
+    </p>
+  );
+}
+
+/** 💙·💛 이번 달 지출 비율 막대. */
+function MemberShare({ entries, members }: { entries: readonly LedgerEntry[]; members: Member[] }) {
+  if (members.length < 2) return null;
+  const sums = members.map((mb) => ({
+    m: mb,
+    amount: entries.filter((e) => e.kind === 'expense' && e.memberId === mb.id).reduce((a, e) => a + e.amount, 0),
+  }));
+  const total = sums.reduce((a, s) => a + s.amount, 0);
+  if (!total) return null;
+  return (
+    <div className="mt-3">
+      <div className="flex h-2 overflow-hidden rounded-full bg-fg/8" role="img" aria-label={sums.map((s) => `${s.m.display_name} ${Math.round((s.amount / total) * 100)}%`).join(', ')}>
+        {sums.map((s) =>
+          s.amount ? <span key={s.m.id} className="h-full transition-[width] duration-500" style={{ width: `${(s.amount / total) * 100}%`, backgroundColor: memberColor(s.m, members) }} /> : null,
+        )}
+      </div>
+      <div className="tabular mt-1.5 flex justify-between text-[12px] text-muted">
+        {sums.map((s) => (
+          <span key={s.m.id}>
+            {s.m.emoji} {s.m.display_name} <b className="text-fg">{formatWon(s.amount)}</b> · {Math.round((s.amount / total) * 100)}%
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

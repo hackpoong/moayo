@@ -31,7 +31,7 @@ function useFreshGuard(ms = 350) {
 /** 휴대폰 키보드 자리에 뜨는 앱 입력판. 위 막대 + 내용. */
 function PanelFrame({ title, actions, onClose, children }: { title: ReactNode; actions?: ReactNode; onClose: () => void; children: ReactNode }) {
   return (
-    <div className="panel-in pb-safe absolute inset-x-0 bottom-0 z-10 flex flex-col bg-surface" onClick={(e) => e.stopPropagation()}>
+    <div className="panel-in pb-safe absolute inset-x-0 bottom-0 z-10 flex flex-col bg-tool" onClick={(e) => e.stopPropagation()}>
       {/* 키보드 도구줄처럼: 위 굵은 선으로 화면과 나누고, 아래 얇은 선으로 입력판과 나눈다 */}
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-t-2 border-b-tool-line border-t-tool-edge bg-tool pl-4 pr-1 text-tool-fg">
         <div className="min-w-0 flex-1 truncate text-[15px] font-semibold">{title}</div>
@@ -40,7 +40,7 @@ function PanelFrame({ title, actions, onClose, children }: { title: ReactNode; a
           <ChevronDown className="size-6" aria-hidden />
         </button>
       </div>
-      <div className="max-h-[40dvh] min-h-[16rem] overflow-y-auto overscroll-contain">{children}</div>
+      <div className="max-h-[40dvh] min-h-[16rem] overflow-y-auto overscroll-contain bg-tool p-1.5">{children}</div>
     </div>
   );
 }
@@ -100,6 +100,10 @@ export function BarButton({ label, onClick, children }: { label: string; onClick
 }
 
 // ── 금액 ───────────────────────────────────────────────────────────────────
+/** 키보드 키처럼: 흰 둥근 키, 아래 얇은 그림자, 누르면 살짝 눌린다. */
+const KEY =
+  'flex select-none items-center justify-center rounded-lg shadow-[0_1px_0_rgba(0,0,0,0.14)] transition-transform active:translate-y-px active:shadow-none active:brightness-95';
+
 const KEYS = [['1', '2', '3', 'del'], ['4', '5', '6', '-'], ['7', '8', '9', '+'], ['00', '0', '000', 'done']] as const;
 
 export function AmountPanel({ expr, onChange, onDone, onClose, label = '금액' }: { expr: string; onChange: (e: string) => void; onDone: () => void; onClose: () => void; label?: string }) {
@@ -120,7 +124,7 @@ export function AmountPanel({ expr, onChange, onDone, onClose, label = '금액' 
 
   return (
     <PanelFrame title={preview !== null ? `${label} = ${formatAmount(preview)}원` : expr ? `${label} ${formatAmount(Number(expr) || 0)}원` : label} onClose={onClose}>
-      <div className="grid grid-cols-4 gap-px bg-line">
+      <div className="grid grid-cols-4 gap-1.5">
         {KEYS.flat().map((k) => (
           <button
             key={k}
@@ -132,9 +136,7 @@ export function AmountPanel({ expr, onChange, onDone, onClose, label = '금액' 
             }}
             onClick={() => k === 'done' && press(k)}
             aria-label={k === 'del' ? '지우기' : k === 'done' ? '완료' : k}
-            className={`flex h-[3.6rem] select-none items-center justify-center text-2xl font-medium active:brightness-90 ${
-              k === 'done' ? 'bg-brand text-lg font-semibold text-brand-fg' : 'bg-surface active:bg-surface-2'
-            }`}
+            className={`${KEY} h-[3.3rem] text-2xl font-medium ${k === 'done' ? 'bg-brand text-lg font-semibold text-brand-fg' : 'bg-surface'} ${k === 'del' || k === '-' || k === '+' ? 'text-muted' : ''}`}
           >
             {k === 'del' ? <Delete className="size-6" aria-hidden /> : k === 'done' ? '완료' : k === '-' ? '−' : k}
           </button>
@@ -178,7 +180,7 @@ export function CategoryPanel({
         </>
       }
     >
-      <div className="grid grid-cols-4 gap-px bg-line">
+      <div className="grid grid-cols-4 gap-1.5">
         {categories.map((c) => (
           <button
             key={c.id}
@@ -189,7 +191,7 @@ export function CategoryPanel({
               onPick(c);
             }}
             aria-pressed={selectedIds.includes(c.id)}
-            className={`relative flex h-[4rem] flex-col items-center justify-center gap-0.5 px-1 text-[13px] active:brightness-95 ${selectedIds.includes(c.id) ? 'bg-brand-soft font-semibold text-brand' : 'bg-surface'}`}
+            className={`${KEY} relative h-[3.8rem] flex-col gap-0.5 px-1 text-[13px] ${selectedIds.includes(c.id) ? 'bg-brand-soft font-semibold text-brand ring-2 ring-brand' : 'bg-surface'}`}
           >
             {c.id === recommendedId ? <Sparkles className="absolute right-1.5 top-1.5 size-3.5 text-brand" aria-label="추천" /> : null}
             {c.icon ? (
@@ -200,7 +202,7 @@ export function CategoryPanel({
             <span className="line-clamp-1">{c.name}</span>
           </button>
         ))}
-        <button type="button" onClick={() => !isFresh() && onPick(null)} className={`flex h-[4rem] flex-col items-center justify-center gap-0.5 text-[13px] ${selectedIds.includes(null) ? 'bg-brand-soft font-semibold text-brand' : 'bg-surface text-muted'}`}>
+        <button type="button" onClick={() => !isFresh() && onPick(null)} className={`${KEY} h-[3.8rem] flex-col gap-0.5 text-[13px] ${selectedIds.includes(null) ? 'bg-brand-soft font-semibold text-brand ring-2 ring-brand' : 'bg-surface text-muted'}`}>
           <span className="text-xl leading-none" aria-hidden>
             ❔
           </span>
@@ -263,8 +265,8 @@ export function AssetPanel({
       ) : (
         groups.map((g) => (
           <div key={g.type}>
-            <p className="bg-surface-2 px-4 py-1.5 text-xs font-medium text-muted">{PAYMENT_METHOD_TYPE_LABEL[g.type]}</p>
-            <div className="grid grid-cols-3 gap-px bg-line">
+            <p className="px-1.5 pb-1 pt-1.5 text-[11px] font-semibold text-tool-fg/60">{PAYMENT_METHOD_TYPE_LABEL[g.type]}</p>
+            <div className="grid grid-cols-3 gap-1.5">
               {g.items.map((pm) => (
                 <button
                   key={pm.id}
@@ -275,14 +277,11 @@ export function AssetPanel({
                     onPick(pm);
                   }}
                   aria-pressed={selectedIds.includes(pm.id)}
-                  className={`flex h-13 items-center justify-center gap-1 px-2 text-center text-[14px] leading-tight active:brightness-95 ${selectedIds.includes(pm.id) ? 'bg-brand-soft font-semibold text-brand' : 'bg-surface'}`}
+                  className={`${KEY} h-12 gap-1 px-2 text-center text-[14px] leading-tight ${selectedIds.includes(pm.id) ? 'bg-brand-soft font-semibold text-brand ring-2 ring-brand' : 'bg-surface'}`}
                 >
                   <span aria-hidden>{assetIcon(pm)}</span>
                   <span className="line-clamp-2">{pm.name}</span>
                 </button>
-              ))}
-              {Array.from({ length: (3 - (g.items.length % 3)) % 3 }, (_, i) => (
-                <span key={`pad-${i}`} className="bg-surface" />
               ))}
             </div>
           </div>

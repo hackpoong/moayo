@@ -25,7 +25,7 @@ import {
   type Transaction,
   type TransactionKind,
 } from '@moayo/core';
-import { ArrowLeft, ArrowLeftRight, Camera, History, MessageSquareText, Plus, Repeat, Sparkles, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, Camera, Check, History, MessageSquareText, Plus, Repeat, Sparkles, Trash2, X } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { InfoTip } from '../components/InfoTip.tsx';
 import { MemberBadge } from '../components/MemberBadge.tsx';
@@ -50,6 +50,8 @@ import { ACTION_LABEL, whenLabel } from '../lib/activity.ts';
 
 type PayRow = { payment_method_id: string | null; member_id: string | null; amount: number };
 
+
+const KIND_ORDER = ['income', 'expense', 'transfer'] as const;
 
 const KIND_STYLE: Record<TransactionKind, string> = {
   income: 'border-income text-income',
@@ -108,6 +110,8 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   const [viewingMemberId, setViewingMemberId] = useState<string | null>(null);
   const [adding, setAdding] = useState<'category' | 'asset' | null>(null);
   const [savedCount, setSavedCount] = useState(0);
+  // '계속'으로 저장하면 버튼이 잠깐 ✓ 로 바뀐다.
+  const [justSaved, setJustSaved] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const [repeatOpen, setRepeatOpen] = useState(false);
   // 반복: 매달 같은 날 자동으로 기록. times 가 null 이면 끝 없음.
@@ -427,6 +431,8 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
     saveRepeat(row);
     setRepeat({ on: false, times: null });
     setSavedCount((n) => n + 1);
+    setJustSaved(true);
+    window.setTimeout(() => setJustSaved(false), 700);
     setTitle('');
     setAmountExpr('');
     setSplits([]);
@@ -594,11 +600,17 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         footer={(close) => (
           <div className="flex gap-2">
             <Button block disabled={!valid} onClick={() => submit(close)}>
-              {amount ? `${formatWon(amount)} 저장` : '저장'}
+              {amount ? (
+                <span>
+                  <b className="tabular text-[17px] font-bold">{formatAmount(amount)}</b>원 저장
+                </span>
+              ) : (
+                '저장'
+              )}
             </Button>
             {!original ? (
               <Button variant="secondary" disabled={!valid} onClick={submitAndContinue} className="shrink-0 px-5">
-                계속
+                {justSaved ? <Check className="size-5 text-income" aria-label="저장함" /> : '계속'}
               </Button>
             ) : null}
           </div>
@@ -608,14 +620,21 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         {(close) => (
         <div className={`space-y-3 px-5 pt-1 ${panel ? 'pb-[46dvh]' : 'pb-6'}`} onClick={() => panel && openPanel(null)}>
           {/* 구분 */}
-          <div className="grid grid-cols-3 gap-2">
-            {(['income', 'expense', 'transfer'] as const).map((k) => (
+          {/* 한 덩어리 분할 버튼: 고른 쪽에만 흰 알약이 미끄러져 온다 */}
+          <div className="relative grid h-10 grid-cols-3 rounded-xl bg-surface-2 p-1" role="radiogroup" aria-label="구분">
+            <span
+              className={`absolute inset-y-1 left-1 w-[calc((100%-0.5rem)/3)] rounded-lg border-2 bg-surface shadow-sm transition-transform duration-200 ease-out ${KIND_STYLE[kind]}`}
+              style={{ transform: `translateX(${KIND_ORDER.indexOf(kind) * 100}%)` }}
+              aria-hidden
+            />
+            {KIND_ORDER.map((k) => (
               <button
                 key={k}
                 type="button"
-                aria-pressed={k === kind}
+                role="radio"
+                aria-checked={k === kind}
                 onClick={() => changeKind(k)}
-                className={`press h-[38px] rounded-xl border-2 text-[15px] font-semibold ${k === kind ? `${KIND_STYLE[k]} bg-surface` : 'border-transparent bg-surface-2 text-muted'}`}
+                className={`relative z-10 text-[15px] font-semibold transition-colors ${k === kind ? KIND_STYLE[k] : 'text-muted'}`}
               >
                 {KIND_LABEL[k]}
               </button>

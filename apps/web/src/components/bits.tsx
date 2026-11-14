@@ -7,7 +7,7 @@ import { setPref } from '../lib/prefs.ts';
 
 /** 원형 이모지: 배경은 이모지 색에 맞춘 연한 색(없으면 fallback 색). */
 export function EmojiCircle({ emoji, fallbackColor, size = 'md' }: { emoji: string | null | undefined; fallbackColor?: string | null; size?: 'sm' | 'md' | 'lg' }) {
-  const box = { sm: 'size-8 text-base', md: 'size-10 text-xl', lg: 'size-12 text-2xl' }[size];
+  const box = { sm: 'size-8 text-base', md: 'size-9 text-[19px]', lg: 'size-12 text-2xl' }[size];
   const tint = emojiTint(emoji);
   const style = (
     tint

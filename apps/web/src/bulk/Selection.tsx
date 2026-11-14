@@ -110,7 +110,7 @@ function SelectionBar({ api }: { api: SelectionApi }) {
   return createPortal(
     <>
       <div className="backdrop-in fixed inset-x-0 top-0 z-40 shadow-lg" role="toolbar" aria-label="고른 내역">
-        <div className="pt-safe bg-bar text-bar-fg">
+        <div className="pt-safe bg-brand text-brand-fg">
           <div className="mx-auto flex h-12 max-w-3xl items-center gap-1 px-2">
             <button type="button" aria-label="고르기 끝" onClick={api.clear} className="press flex size-11 items-center justify-center rounded-full">
               <ArrowLeft className="size-6" aria-hidden />
@@ -123,7 +123,7 @@ function SelectionBar({ api }: { api: SelectionApi }) {
               <MoreVertical className="size-5" aria-hidden />
             </button>
           </div>
-          <div className="mx-auto flex max-w-3xl items-center justify-between bg-black/25 px-4 py-2 text-[15px]">
+          <div className="mx-auto flex max-w-3xl items-center justify-between bg-black/15 px-4 py-2 text-[15px]">
             <span>{txs.length}건이 선택되었습니다.</span>
             <span className="tabular font-semibold">{formatWon(Math.abs(net))}</span>
           </div>
