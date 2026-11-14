@@ -162,7 +162,7 @@ function ShellLayout() {
       </div>
       <Suspense fallback={null}>
       {editor?.request.importMode ? (
-        <ImportSheet key={editor.key} initialMode={editor.request.importMode} initialText={editor.request.text} initialFiles={editor.request.files} onClose={closeEditor} />
+        <ImportSheet key={editor.key} initialMode={editor.request.importMode} initialText={editor.request.text} initialFiles={editor.request.files} fromCamera={editor.request.fromCamera} onClose={closeEditor} />
       ) : editor ? (
         <TransactionEditor key={editor.key} request={editor.request} onClose={closeEditor} />
       ) : null}

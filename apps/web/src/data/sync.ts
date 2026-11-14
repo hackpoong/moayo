@@ -5,6 +5,7 @@
 
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { PULL_TABLES, PUSH_TABLES, type LocalDb, type PullTable, type PushTable, type RowByTable } from './localDb.ts';
+import { rememberPhoto } from '../lib/photoCache.ts';
 
 export type SyncState = 'idle' | 'syncing' | 'offline' | 'error';
 
@@ -129,6 +130,8 @@ export class SyncEngine {
     this.setStatus({ state: 'syncing' });
     try {
       await this.push();
+      // 사진 파일은 글자 데이터를 먼저 올린 뒤에 올린다(내역은 바로 다른 폰에 보이고, 사진은 뒤따라온다).
+      await this.uploadFiles();
       if (this.pullWanted || !this.realtimeLive) {
         this.pullWanted = false;
         await this.pull();
@@ -173,6 +176,30 @@ export class SyncEngine {
         await this.acceptPushed(table, entries, (data ?? []) as AnyRow[]);
         if (entries.length < PUSH_BATCH) break;
       }
+    }
+  }
+
+  private async uploadFiles(): Promise<void> {
+    const entries = await this.db.uploads.where('household_id').equals(this.householdId).filter((e) => e.attempts < 8).sortBy('queued_at');
+    if (!entries.length) return;
+    const bucket = this.client.storage.from('attachments');
+    const deletes = entries.filter((e) => e.op === 'delete');
+    if (deletes.length) {
+      const { error } = await bucket.remove(deletes.map((e) => e.path));
+      if (error && isNetworkError(error)) throw error;
+      await this.db.uploads.bulkDelete(deletes.map((e) => e.path));
+    }
+    for (const e of entries) {
+      if (e.op !== 'put' || !e.blob) continue;
+      const { error } = await bucket.upload(e.path, e.blob, { contentType: e.type, upsert: true, cacheControl: '31536000' });
+      if (error) {
+        if (isNetworkError(error)) throw error;
+        await this.db.uploads.update(e.path, { attempts: e.attempts + 1, last_error: errorMessage(error) });
+        continue;
+      }
+      // 올린 파일은 이 기기 사진 캐시로 옮겨 두어 다시 받지 않는다.
+      await rememberPhoto(e.path, e.blob);
+      await this.db.uploads.delete(e.path);
     }
   }
 

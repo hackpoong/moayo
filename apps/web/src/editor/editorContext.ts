@@ -12,6 +12,8 @@ export interface EditorRequest {
   text?: string;
   /** 자동 입력에 미리 넣을 사진(갤러리 공유). */
   files?: File[];
+  /** files 가 방금 카메라로 찍은 사진인지(영수증 사진으로 내역에 남길지 정할 때 쓴다). */
+  fromCamera?: boolean;
 }
 
 export const EditorContext = createContext<((req?: EditorRequest) => void) | null>(null);

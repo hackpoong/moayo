@@ -30,6 +30,8 @@ export function duplicate(tx: Transaction, date: string, methods: ReadonlyMap<st
       review: null,
       approval_no: null,
       created_by: null,
+      // 사진 파일은 원래 내역 것이라 복제하지 않는다.
+      attachments: [],
       cash_date_override: false,
     },
     date,

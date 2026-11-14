@@ -51,8 +51,8 @@ export function AddMenu({ open: openEditor }: { open: (req?: EditorRequest) => v
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  const pickFiles = (files: FileList | null) => {
-    if (files?.length) openEditor({ importMode: 'image', files: [...files] });
+  const pickFiles = (files: FileList | null, fromCamera = false) => {
+    if (files?.length) openEditor({ importMode: 'image', files: [...files], fromCamera });
   };
 
   /**
@@ -84,7 +84,7 @@ export function AddMenu({ open: openEditor }: { open: (req?: EditorRequest) => v
   return (
     <>
       <input ref={gallery} type="file" accept="image/*" multiple className="hidden" onChange={(e) => (pickFiles(e.target.files), (e.target.value = ''))} />
-      <input ref={camera} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => (pickFiles(e.target.files), (e.target.value = ''))} />
+      <input ref={camera} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => (pickFiles(e.target.files, true), (e.target.value = ''))} />
       {shown
         ? createPortal(
             <div className="fixed inset-0 z-20 md:hidden" onClick={() => close()} aria-hidden />,

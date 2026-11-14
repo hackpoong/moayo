@@ -154,6 +154,9 @@ Deno.serve(async (req) => {
 
   try {
     const result = await ingest(admin, body, userId, member.id as string);
+    // 7일 지난 불러오기 원본은 지운다(영수증은 앱이 따로 줄여서 내역 사진으로 남긴다). 응답은 기다리게 하지 않는다.
+    const cleanup = cleanupOldInputs(admin).catch((e) => console.error('cleanup failed', e instanceof Error ? e.message : String(e)));
+    (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } }).EdgeRuntime?.waitUntil(cleanup);
     return json(req, 200, result);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
@@ -161,6 +164,17 @@ Deno.serve(async (req) => {
     return json(req, e instanceof ExtractError && e.retryable ? 503 : 500, { error: message });
   }
 });
+
+/** 7일 넘은 원본 이미지를 한 번에 50개까지 지운다(storage 는 SQL 로 지울 수 없어 API 로). */
+async function cleanupOldInputs(admin: SupabaseClient) {
+  const before = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+  const { data, error } = await admin.from('raw_inputs').select('id, image_path').not('image_path', 'is', null).lt('created_at', before).limit(50);
+  if (error || !data?.length) return;
+  const paths = data.map((r) => r.image_path as string);
+  const { error: removeError } = await admin.storage.from('inputs').remove(paths);
+  if (removeError) throw removeError;
+  await admin.from('raw_inputs').update({ image_path: null }).in('id', data.map((r) => r.id as string));
+}
 
 async function ingest(admin: SupabaseClient, body: IngestBody, userId: string, memberId: string) {
   const householdId = body.household_id;

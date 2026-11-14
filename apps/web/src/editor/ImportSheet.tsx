@@ -10,6 +10,8 @@ import { useCurrentHousehold } from '../lib/householdContext.ts';
 import { setPref, usePrefs, type AiQuality } from '../lib/prefs.ts';
 import { db, describeError } from '../lib/supabase.ts';
 import { useOpenEditor } from './editorContext.ts';
+import { useMutations } from '../data/mutations.ts';
+import { MAX_ATTACHMENTS, preparePhoto, queuePhotoChanges } from '../lib/photos.ts';
 
 type Mode = 'image' | 'text';
 
@@ -32,6 +34,7 @@ interface IngestResult {
   review: number;
   items: ResultItem[];
   repeated?: boolean;
+  source_kind?: string;
 }
 
 interface Job {
@@ -126,6 +129,7 @@ export function ImportSheet({
   initialMode = 'image',
   initialText,
   initialFiles,
+  fromCamera,
   onClose,
 }: {
   initialMode?: Mode;
@@ -133,10 +137,13 @@ export function ImportSheet({
   initialText?: string;
   /** 갤러리에서 '공유 → 모아요'로 들어온 사진. */
   initialFiles?: File[];
+  /** initialFiles 가 카메라로 찍은 사진인지. */
+  fromCamera?: boolean;
   onClose: () => void;
 }) {
   const household = useCurrentHousehold();
-  const { engine } = useDataContext();
+  const { engine, db: localDb } = useDataContext();
+  const { save } = useMutations();
   const { aiQuality } = usePrefs();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [text, setText] = useState(initialText ?? '');
@@ -174,7 +181,29 @@ export function ImportSheet({
     running.current = false;
   };
 
-  const addFiles = (files: FileList | File[] | null | undefined) => {
+  /**
+   * 영수증 사진·카메라로 찍은 사진은 그 내역에 사진으로 남긴다(긴 변 1600px 로 줄여서).
+   * 토스·네이버 같은 목록 캡처(여러 건)는 남기지 않는다.
+   */
+  const keepAsReceipt = async (file: File, result: IngestResult, camera: boolean) => {
+    const targets = result.items.filter((it) => it.action === 'created' || it.action === 'merged' || it.action === 'review');
+    if (targets.length !== 1 || !(camera || result.source_kind === 'receipt')) return;
+    const txId = targets[0]!.transaction_id;
+    const photo = await preparePhoto(file, household.householdId, txId);
+    // 방금 서버가 만든 내역이 기기에 내려올 때까지 잠깐 기다린다.
+    let tx: Transaction | undefined;
+    for (let i = 0; i < 40 && !tx; i++) {
+      tx = await localDb.transactions.get(txId);
+      if (!tx) await new Promise((r) => setTimeout(r, 250));
+    }
+    if (!tx) return;
+    const list = tx.attachments ?? [];
+    if (list.length >= MAX_ATTACHMENTS) return;
+    await queuePhotoChanges(localDb, household.householdId, [photo], []);
+    await save('transactions', { ...tx, attachments: [...list, photo.attachment] });
+  };
+
+  const addFiles = (files: FileList | File[] | null | undefined, camera = false) => {
     const quality: AiQuality = aiQuality;
     if (!files?.length) return;
     const month = new Date().toISOString().slice(0, 7);
@@ -203,10 +232,12 @@ export function ImportSheet({
             total.merged += r.merged;
             total.duplicate += r.duplicate;
             total.review += r.review;
+            total.source_kind ??= r.source_kind;
             total.items.push(...r.items);
             total.repeated = r.repeated;
           }
           if (pieces.length > 1) update(id, { label: `${name} (${pieces.length}조각)` });
+          else await keepAsReceipt(file, total, camera).catch((e) => console.warn('영수증 사진을 남기지 못했습니다', e));
           return total;
         },
       };
@@ -239,7 +270,7 @@ export function ImportSheet({
   useEffect(() => {
     if (startedShare.current || !initialFiles?.length) return;
     startedShare.current = true;
-    addFiles(initialFiles);
+    addFiles(initialFiles, fromCamera);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

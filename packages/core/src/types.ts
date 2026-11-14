@@ -205,6 +205,23 @@ export interface ReceiptItem {
   quantity?: number;
 }
 
+/** 내역에 붙인 사진 하나. 파일은 storage 'attachments' 버킷에 있다. */
+export interface Attachment {
+  id: Uuid;
+  /** `{household}/{txId}/{id}.webp` */
+  path: string;
+  /** 400px 썸네일 */
+  thumb_path: string;
+  w: number;
+  h: number;
+  bytes: number;
+  created_at: IsoDateTime;
+}
+
+/** 내역 하나에 직접 붙일 수 있는 사진 수(병합하면 MAX_MERGED_ATTACHMENTS 까지). */
+export const MAX_ATTACHMENTS = 4;
+export const MAX_MERGED_ATTACHMENTS = 8;
+
 export interface Transaction extends SyncedRow {
   kind: TransactionKind;
   status: TransactionStatus;
@@ -224,6 +241,8 @@ export interface Transaction extends SyncedRow {
   splits: Split[];
   /** 여러 자산으로 나눠 냈을 때 자산별 금액. 비어 있으면 payment_method_id·member_id 한 곳에서 전액. */
   payments?: Payment[];
+  /** 붙인 사진(영수증 등). */
+  attachments?: Attachment[];
   tag_ids: Uuid[];
   approval_no: string | null;
   card_last4: string | null;

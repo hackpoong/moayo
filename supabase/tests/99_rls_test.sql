@@ -252,5 +252,11 @@ select test.login(:'carol');
 select test.ok((select count(*) from public.activity_log where household_id = :'ha') = 0 and (select count(*) from public.recurring_rules) = 0, '캐럴: 다른 가족 기록·규칙 안 보임');
 select test.login(:'alice');
 
+-- ── 사진 ─────────────────────────────────────────────────────────────────
+select test.ok(test.affected(format($$insert into public.transactions (household_id, kind, amount, occurred_at, cash_date, attachments)
+  values (%L, 'expense', 900, now(), current_date, '[{"id":"a","path":"p"}]')$$, :'ha')) = 1, '사진 붙인 내역 저장');
+select test.ok(test.throws(format($$insert into public.transactions (household_id, kind, amount, occurred_at, cash_date, attachments)
+  values (%L, 'expense', 900, now(), current_date, (select jsonb_agg(jsonb_build_object('id', g)) from generate_series(1, 9) g))$$, :'ha')), '사진 9장은 거부');
+
 reset role;
 \echo 'ALL DB TESTS PASSED'

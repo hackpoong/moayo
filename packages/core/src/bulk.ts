@@ -3,7 +3,7 @@
 import { computeCashDate } from './cashDate.ts';
 import { normalizeMerchant } from './ingest/text.ts';
 import { toKstDate } from './kst.ts';
-import type { PaymentMethod, Split, Transaction, Uuid } from './types.ts';
+import { MAX_MERGED_ATTACHMENTS, type PaymentMethod, type Split, type Transaction, type Uuid } from './types.ts';
 
 /** 고친 내역에서 바뀐 칸(제목·분류·자산). 바뀐 것만 다른 내역에 옮긴다. */
 export interface RenameChanges {
@@ -137,6 +137,8 @@ export function mergeTransactions(txs: readonly Transaction[], newId: Uuid, now:
     cash_date: primary?.cash_date ?? lead.cash_date,
     installment_months: pays.length > 1 ? 1 : lead.installment_months,
     tag_ids: [...new Set(txs.flatMap((t) => t.tag_ids))],
+    // 사진은 기준 내역 것부터 이어 붙인다(파일은 원래 경로 그대로 함께 쓴다).
+    attachments: [lead, ...txs.filter((t) => t !== lead)].flatMap((t) => t.attachments ?? []).slice(0, MAX_MERGED_ATTACHMENTS),
     source: 'manual',
     field_sources: { merged_from: txs.map((t) => t.id).join(',') },
     linked_tx_id: null,

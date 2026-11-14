@@ -34,6 +34,18 @@ export interface OutboxEntry {
   last_error: string | null;
 }
 
+/** 아직 storage 에 올리지(지우지) 못한 사진 파일. */
+export interface UploadEntry {
+  path: string;
+  household_id: string;
+  op: 'put' | 'delete';
+  blob: Blob | null;
+  type: string;
+  queued_at: number;
+  attempts: number;
+  last_error: string | null;
+}
+
 export interface MetaEntry {
   key: string;
   value: string;
@@ -50,6 +62,7 @@ export class LocalDb extends Dexie {
   transactions!: Table<Transaction, string>;
   members!: Table<Member, string>;
   outbox!: Table<OutboxEntry, [string, string]>;
+  uploads!: Table<UploadEntry, string>;
   meta!: Table<MetaEntry, string>;
 
   constructor(name: string) {
@@ -66,6 +79,7 @@ export class LocalDb extends Dexie {
     });
     this.version(2).stores({ merchant_rules: 'id, household_id' });
     this.version(3).stores({ recurring_rules: 'id, household_id', activity_log: 'id, household_id, tx_id' });
+    this.version(4).stores({ uploads: 'path, household_id, queued_at' });
   }
 
   rows<T extends PullTable>(table: T): Table<RowByTable[T], string> {

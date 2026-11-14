@@ -37,6 +37,16 @@ describe('고친 뒤 같은 이름 내역 바꾸기', () => {
 });
 
 describe('병합', () => {
+  it('사진은 기준 내역 것부터 이어 붙이고 8장까지', () => {
+    const att = (id: string) => ({ id, path: `h/t/${id}.webp`, thumb_path: `h/t/${id}_t.webp`, w: 1, h: 1, bytes: 1, created_at: '' });
+    const txs = [
+      makeTx({ id: 'a', amount: 100, attachments: [att('a1'), att('a2'), att('a3'), att('a4')] }),
+      makeTx({ id: 'b', amount: 900, attachments: [att('b1'), att('b2'), att('b3'), att('b4'), att('b5')] }),
+    ];
+    const r = mergeTransactions(txs, 'new', 'now');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.merged.attachments!.map((x) => x.id)).toEqual(['b1', 'b2', 'b3', 'b4', 'b5', 'a1', 'a2', 'a3']);
+  });
   it('−800 −1,600 −200(취소) → 지출 2,400', () => {
     const txs = [
       makeTx({ id: 'x1', merchant: '에브리포터블', amount: 800, payment_method_id: 'kakao' }),

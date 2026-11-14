@@ -22,6 +22,7 @@ import {
   type Member,
   type PaymentMethod,
   type Split,
+  type Attachment,
   type Transaction,
   type TransactionKind,
 } from '@moayo/core';
@@ -33,7 +34,10 @@ import { Sheet } from '../components/Sheet.tsx';
 import { useToast } from '../components/toastContext.ts';
 import { useBulkRename } from '../bulk/bulkContext.ts';
 import { Button } from '../components/ui.tsx';
-import { useData } from '../data/dataContext.ts';
+import { useData, useDataContext } from '../data/dataContext.ts';
+import { PhotoViewer } from '../components/PhotoViewer.tsx';
+import { MAX_ATTACHMENTS, preparePhoto, queuePhotoChanges, type PreparedPhoto } from '../lib/photos.ts';
+import { PhotoAddButton, PhotoGrid } from './PhotoField.tsx';
 import { baseRow, newId, useMutations } from '../data/mutations.ts';
 import { assetIcon } from '../lib/assets.ts';
 import { flashRow, haptic } from '../lib/flash.ts';
@@ -68,6 +72,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   const data = useData();
   const me = useCurrentHousehold();
   const { save, remove } = useMutations();
+  const { db: localDb } = useDataContext();
   const openEditor = useOpenEditor();
   const toast = useToast();
   const askBulkRename = useBulkRename();
@@ -103,6 +108,12 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   const [date, setDate] = useState(original ? toKstDate(original.occurred_at) : (request.date ?? todayKst()));
   const [time, setTime] = useState(original ? (original.has_time ? toKstTime(original.occurred_at) : '') : toKstTime(new Date()));
   const [memo, setMemo] = useState(original?.memo ?? '');
+  // 새 내역도 id 를 미리 정해 둔다(사진 경로에 쓴다).
+  const [draftId, setDraftId] = useState(() => original?.id ?? newId());
+  const [photos, setPhotos] = useState<Attachment[]>(original?.attachments ?? []);
+  const [addedPhotos, setAddedPhotos] = useState<PreparedPhoto[]>([]);
+  const [viewer, setViewer] = useState<number | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(0);
   const [installments, setInstallments] = useState(original?.installment_months ?? 1);
   const [tagIds, setTagIds] = useState<string[]>(original?.tag_ids ?? []);
   const [newTag, setNewTag] = useState('');
@@ -337,7 +348,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
     const primary = payRows.length ? [...payRows].sort((a, b) => b.amount - a.amount)[0]! : null;
     return {
       ...(original ?? {
-        id: newId(),
+        id: draftId,
         household_id: me.householdId,
         created_at: now,
         updated_at: now,
@@ -369,21 +380,57 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
       splits: finalSplits,
       payments: payRows.length > 1 ? payRows : [],
       tag_ids: tagIds,
+      attachments: photos,
       status: original?.status === 'review' ? 'confirmed' : (original?.status ?? 'confirmed'),
       review: null,
       field_sources: original && original.source !== 'manual' ? { ...original.field_sources, user_edited: 'true' } : (original?.field_sources ?? {}),
     };
   };
 
+  /** 고른 사진을 휴대폰에서 줄여 붙인다(올리기는 저장 뒤 동기화가 한다). */
+  const addPhotos = (files: File[]) => {
+    const room = MAX_ATTACHMENTS - photos.length - photoBusy;
+    if (files.length > room) toast({ message: `사진은 ${MAX_ATTACHMENTS}장까지 붙일 수 있어요`, tone: 'error' });
+    const take = files.slice(0, Math.max(0, room));
+    if (!take.length) return;
+    setPhotoBusy((n) => n + take.length);
+    // 고른 순서대로 붙도록 한 장씩 차례로 줄인다.
+    void take.reduce(
+      (prev, f) =>
+        prev.then(() =>
+          preparePhoto(f, me.householdId, draftId)
+            .then((p) => {
+              setAddedPhotos((xs) => [...xs, p]);
+              setPhotos((ps) => (ps.length >= MAX_ATTACHMENTS ? ps : [...ps, p.attachment]));
+            })
+            .catch(() => toast({ message: '사진을 읽지 못했어요', tone: 'error' }))
+            .finally(() => setPhotoBusy((n) => n - 1)),
+        ),
+      Promise.resolve(),
+    );
+  };
+
   const persist = (row: Transaction) => {
     haptic(12);
     flashRow(row.id);
+    const kept = new Set(photos.map((p) => p.id));
+    // 병합으로 같은 파일을 함께 쓰는 다른 내역이 있으면 파일은 남긴다.
+    const usedElsewhere = new Set(
+      [...data.transactions, ...[...data.mergedInto.values()].flat()].filter((t) => t.id !== row.id).flatMap((t) => (t.attachments ?? []).map((a) => a.id)),
+    );
+    const removedPhotos = (original?.attachments ?? []).filter((a) => !kept.has(a.id) && !usedElsewhere.has(a.id));
+    const added = addedPhotos.filter((p) => kept.has(p.attachment.id));
+    if (added.length || removedPhotos.length) void queuePhotoChanges(localDb, me.householdId, added, removedPhotos);
     save('transactions', row).catch(() => toast({ message: '기기에 저장하지 못했습니다. 다시 시도해 주세요.', tone: 'error' }));
     toast({
       message: original ? '고쳤어요' : `${formatWon(row.amount)} 저장했어요`,
       action: {
         label: '되돌리기',
-        onClick: () => void (original ? save('transactions', original) : remove('transactions', row)),
+        onClick: () => {
+          void (original ? save('transactions', original) : remove('transactions', row));
+          // 새 내역을 되돌리면 막 붙인 사진 파일도 지운다.
+          if (!original && added.length) void queuePhotoChanges(localDb, me.householdId, [], added.map((p) => p.attachment));
+        },
       },
     });
   };
@@ -443,6 +490,9 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
     setTagIds([]);
     setMemo('');
     setPanel(null);
+    setDraftId(newId());
+    setPhotos([]);
+    setAddedPhotos([]);
     requestAnimationFrame(() => titleRef.current?.focus());
   };
 
@@ -562,6 +612,10 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         onClose={onClose}
         full
         onBack={() => {
+          if (viewer !== null) {
+            setViewer(null);
+            return true;
+          }
           if (!panel) return false;
           setPanel(null);
           return true;
@@ -866,6 +920,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
           </div>
 
           {/* 7) 메모 */}
+          <div className="flex items-start gap-1 border-b border-line focus-within:border-brand">
           <textarea
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
@@ -875,8 +930,13 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
             rows={Math.min(8, Math.max(1, memo.split('\n').length))}
             placeholder="메모"
             aria-label="메모"
-            className="block w-full resize-none border-b border-line bg-transparent py-2.5 text-base leading-relaxed outline-none placeholder:text-muted/60 focus:border-brand"
+            className="block min-w-0 flex-1 resize-none bg-transparent py-2.5 text-base leading-relaxed outline-none placeholder:text-muted/60"
           />
+            <PhotoAddButton disabled={photos.length + photoBusy >= MAX_ATTACHMENTS} onFiles={addPhotos} />
+          </div>
+          {photoBusy ? <p className="text-xs text-muted">사진 {photoBusy}장 줄이는 중…</p> : null}
+          <PhotoGrid items={photos} onOpen={setViewer} onRemove={(a) => setPhotos((ps) => ps.filter((p) => p.id !== a.id))} />
+          {viewer !== null && photos.length ? <PhotoViewer items={photos} start={Math.min(viewer, photos.length - 1)} onClose={() => setViewer(null)} /> : null}
 
           {original && mergedChildren.length ? (
             <details className="rounded-xl bg-surface-2 px-4 py-3">

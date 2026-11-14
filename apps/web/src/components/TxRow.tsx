@@ -1,5 +1,5 @@
 import { formatAmount, splitIconName, todayKst, type Transaction, type TransactionKind } from '@moayo/core';
-import { ArrowLeftRight, CircleAlert, Copy, Layers, Scissors, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, CircleAlert, Copy, Image as ImageIcon, Layers, Scissors, Trash2 } from 'lucide-react';
 import { useSelection } from '../bulk/selectionContext.ts';
 import { duplicate } from '../bulk/txEdit.ts';
 import { useMutations } from '../data/mutations.ts';
@@ -93,6 +93,7 @@ export function TxRow({ tx, amount }: { tx: Transaction; amount?: number }) {
           <span className="truncate font-semibold">{title}</span>
           {split ? <Scissors className="size-3.5 shrink-0 text-muted" aria-label="나눠서 기록" /> : null}
           {mergedCount ? <Layers className="size-3.5 shrink-0 text-muted" aria-label={`${mergedCount + 0}건 합친 내역`} /> : null}
+          {tx.attachments?.length ? <ImageIcon className="size-3.5 shrink-0 text-muted" aria-label={`사진 ${tx.attachments.length}장`} /> : null}
           {tx.status === 'review' ? <CircleAlert className="size-4 shrink-0 text-expense" aria-label="확인 필요" /> : null}
         </span>
         {subText ? <span className="block truncate text-[13px] font-normal text-muted">{subText}</span> : null}

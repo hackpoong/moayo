@@ -313,3 +313,24 @@ body {
 .drop-in-out {
   animation: drop-in-out 150ms ease-in forwards;
 }
+
+/* 작은 메뉴·사진 보기 */
+@keyframes pop-in {
+  from {
+    transform: translateY(-4px) scale(0.96);
+    opacity: 0;
+  }
+}
+.pop-in {
+  animation: pop-in 160ms var(--ease-out);
+  transform-origin: top right;
+}
+.fade-in {
+  animation: fade-in 180ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pop-in,
+  .fade-in {
+    animation: none;
+  }
+}
