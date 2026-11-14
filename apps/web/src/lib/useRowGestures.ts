@@ -54,7 +54,12 @@ export function useRowGestures({
         window.clearTimeout(s.timer);
         s.horiz = Math.abs(mx) > Math.abs(my) * 1.3;
       }
-      if (s.horiz && swipe) setDx(Math.max(-140, Math.min(140, mx)));
+      // 기준(90px)을 넘으면 고무줄처럼 버티며 조금씩만 더 따라온다.
+      if (s.horiz && swipe) {
+        const over = Math.abs(mx) - SWIPE_PX;
+        const eased = over > 0 ? SWIPE_PX + over * 0.35 : Math.abs(mx);
+        setDx(Math.sign(mx) * Math.min(170, eased));
+      }
     },
     onPointerUp: (e: ReactPointerEvent) => {
       const s = g.current;

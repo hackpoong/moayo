@@ -28,12 +28,53 @@ function useFreshGuard(ms = 350) {
   return () => performance.now() - openedAt.current < ms;
 }
 
-/** 휴대폰 키보드 자리에 뜨는 앱 입력판. 위 막대 + 내용. */
+/** 휴대폰 키보드 자리에 뜨는 앱 입력판. 위 막대 + 내용. 위 막대를 아래로 끌면 따라 내려오다 닫힌다. */
 function PanelFrame({ title, actions, onClose, children }: { title: ReactNode; actions?: ReactNode; onClose: () => void; children: ReactNode }) {
+  const panel = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ y: number; t: number; dy: number } | null>(null);
+  const setY = (dy: number, animate: boolean) => {
+    const el = panel.current;
+    if (!el) return;
+    el.style.transition = animate ? 'transform 380ms var(--spring)' : 'none';
+    el.style.transform = dy ? `translateY(${dy}px)` : '';
+  };
+  const onDown = (e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' || (e.target as HTMLElement).closest('button')) return;
+    drag.current = { y: e.clientY, t: performance.now(), dy: 0 };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    // 위로는 고무줄처럼 조금만, 아래로는 손가락을 그대로 따라온다.
+    const raw = e.clientY - d.y;
+    d.dy = raw < 0 ? raw * 0.15 : raw;
+    setY(d.dy, false);
+  };
+  const onUp = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    const speed = d.dy / Math.max(1, performance.now() - d.t);
+    if (d.dy > 80 || speed > 0.6) {
+      const el = panel.current;
+      if (el) {
+        el.style.transition = 'transform 160ms ease-in';
+        el.style.transform = 'translateY(100%)';
+      }
+      window.setTimeout(onClose, 150);
+    } else setY(0, true);
+  };
   return (
-    <div className="panel-in pb-safe absolute inset-x-0 bottom-0 z-10 flex flex-col bg-tool" onClick={(e) => e.stopPropagation()}>
+    <div ref={panel} className="panel-in pb-safe absolute inset-x-0 bottom-0 z-10 flex flex-col bg-tool" onClick={(e) => e.stopPropagation()}>
       {/* 키보드 도구줄처럼: 위 굵은 선으로 화면과 나누고, 아래 얇은 선으로 입력판과 나눈다 */}
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-t-2 border-b-tool-line border-t-tool-edge bg-tool pl-4 pr-1 text-tool-fg">
+      <div
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        className="flex h-12 shrink-0 touch-none items-center gap-1 border-b border-t-2 border-b-tool-line border-t-tool-edge bg-tool pl-4 pr-1 text-tool-fg"
+      >
         <div className="min-w-0 flex-1 truncate text-[15px] font-semibold">{title}</div>
         {actions}
         <button type="button" aria-label="입력판 닫기" onClick={onClose} className="press flex size-11 items-center justify-center rounded-full">
@@ -102,7 +143,7 @@ export function BarButton({ label, onClick, children }: { label: string; onClick
 // ── 금액 ───────────────────────────────────────────────────────────────────
 /** 키보드 키처럼: 흰 둥근 키, 아래 얇은 그림자, 누르면 살짝 눌린다. */
 const KEY =
-  'flex select-none items-center justify-center rounded-lg shadow-[0_1px_0_rgba(0,0,0,0.14)] transition-transform active:translate-y-px active:shadow-none active:brightness-95';
+  'key-spring flex select-none items-center justify-center rounded-lg shadow-[0_1px_0_rgba(0,0,0,0.14)] active:shadow-none active:brightness-95';
 
 const KEYS = [['1', '2', '3', 'del'], ['4', '5', '6', '-'], ['7', '8', '9', '+'], ['00', '0', '000', 'done']] as const;
 

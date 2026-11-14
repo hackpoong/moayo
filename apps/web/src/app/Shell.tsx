@@ -140,6 +140,7 @@ function ShellLayout() {
                     to={tab.to}
                     end={tab.end}
                     viewTransition
+                    onClick={() => markNavDirection(tab.to)}
                     className={({ isActive }) =>
                       `flex h-16 flex-col items-center justify-center gap-0.5 text-[11px] ${isActive ? 'font-bold text-brand' : 'font-medium text-muted'}`
                     }
@@ -147,7 +148,10 @@ function ShellLayout() {
                     {({ isActive }) => (
                       <>
                         {/* 고른 탭: 아이콘 뒤 연한 알약 + 채운 아이콘 */}
-                        <span className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors ${isActive ? 'bg-brand-soft' : ''}`}>
+                        <span
+                          className={`flex h-8 w-14 items-center justify-center rounded-full transition-colors ${isActive ? 'bg-brand-soft' : ''}`}
+                          style={isActive ? { viewTransitionName: 'tab-pill' } : undefined}
+                        >
                           <tab.icon className="size-6" fill={isActive && tab.fill ? 'currentColor' : 'none'} fillOpacity={0.18} strokeWidth={isActive ? 2.25 : 2} aria-hidden />
                         </span>
                         {tab.label}
@@ -169,4 +173,12 @@ function ShellLayout() {
       </Suspense>
     </EditorContext.Provider>
   );
+}
+
+/** 탭 순서로 화면이 넘어가는 방향을 정한다(왼쪽 탭 → 오른쪽 탭이면 앞으로). */
+function markNavDirection(to: string) {
+  const index = (path: string) => TABS.findIndex((t) => (t.end ? path === t.to : path.startsWith(t.to)));
+  const from = index(window.location.pathname);
+  const next = index(to);
+  document.documentElement.dataset.navDir = from < 0 || next < 0 || from === next ? '' : next > from ? 'forward' : 'back';
 }

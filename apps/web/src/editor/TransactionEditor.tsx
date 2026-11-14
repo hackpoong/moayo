@@ -41,6 +41,7 @@ import { PhotoAddButton, PhotoGrid } from './PhotoField.tsx';
 import { baseRow, newId, useMutations } from '../data/mutations.ts';
 import { assetIcon } from '../lib/assets.ts';
 import { flashRow, haptic } from '../lib/flash.ts';
+import { announceSaved } from '../lib/motion.ts';
 import { KIND_LABEL, shortDate, weekday } from '../lib/format.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
 import { useOpenEditor, type EditorRequest } from './editorContext.ts';
@@ -466,6 +467,8 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
     const row = buildRow();
     persist(row);
     saveRepeat(row);
+    // 저장 버튼 자리에서 보라 점이 + 버튼으로 날아간다.
+    announceSaved(document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement.getBoundingClientRect() : null);
     close();
     if (original) askBulkRename(original, row);
   };

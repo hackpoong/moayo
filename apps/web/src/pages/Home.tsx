@@ -12,6 +12,7 @@ import { useLedger } from '../data/useLedger.ts';
 import { useOpenEditor } from '../editor/editorContext.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
 import { memberColor } from '../lib/members.ts';
+import { CountUp } from '../lib/motion.ts';
 import { usePrefs } from '../lib/prefs.ts';
 
 export function Home() {
@@ -46,7 +47,7 @@ export function Home() {
 
       <section className="rounded-2xl bg-surface p-5">
         <p className="text-sm text-muted">{basis === 'cash' ? '이번 달 나간 돈' : '이번 달 쓴 돈'}</p>
-        <p className="tabular mt-1 text-3xl font-bold">{formatWon(t.expense)}</p>
+        <p className="tabular mt-1 text-3xl font-bold"><CountUp value={t.expense} format={formatWon} /></p>
         <VsLastMonth entries={entries} month={month} />
         <MemberShare entries={inRange(entries, from, to)} members={data.members} />
         <div className="tabular mt-3 flex gap-4 text-sm">

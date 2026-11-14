@@ -132,6 +132,9 @@ body {
 :root {
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  /* 살짝 넘쳤다 돌아오는 스프링 */
+  --spring: linear(0, 0.009, 0.035 2.1%, 0.141 4.4%, 0.723 12.9%, 0.938 16.7%, 1.017 19.4%, 1.067, 1.099 24.3%, 1.108 26%, 1.1, 1.083 30.4%, 1.026 35.6%, 1.003 40%, 0.991 43.6%, 0.992 47.3%, 1.002 57.8%, 0.999 69.2%, 1);
+  --back-out: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 @keyframes sheet-in {
@@ -286,15 +289,20 @@ body {
 /* + 버튼 메뉴: 원이 물방울처럼 위로 떨어져 나온다(살짝 튕김). */
 @keyframes drop-out {
   0% {
-    transform: translateY(var(--drop-from, 80px)) scale(0.35);
+    transform: translateY(var(--drop-from, 80px)) scale(0.3, 0.45);
     opacity: 0;
   }
-  55% {
-    transform: translateY(-8px) scale(1.06);
+  45% {
+    /* 위로 튀어 오르며 세로로 늘어난다 */
+    transform: translateY(-10px) scale(0.92, 1.14);
     opacity: 1;
   }
-  78% {
-    transform: translateY(3px) scale(0.97);
+  68% {
+    /* 내려앉으며 납작해진다 */
+    transform: translateY(3px) scale(1.08, 0.92);
+  }
+  85% {
+    transform: translateY(-1px) scale(0.98, 1.02);
   }
   100% {
     transform: none;
@@ -333,4 +341,104 @@ body {
   .fade-in {
     animation: none;
   }
+}
+
+/* + 버튼: 누르면 쏙 들어갔다가 스프링으로 튀어나온다 */
+.fab-spring {
+  transition: transform 520ms var(--spring);
+}
+.fab-spring:active {
+  transform: scale(0.88);
+  transition-duration: 90ms;
+  transition-timing-function: ease-out;
+}
+/* 처음 쓰는 사람에게 한 번 은은하게 빛난다 */
+@keyframes fab-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--app-brand) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 14px color-mix(in srgb, var(--app-brand) 0%, transparent);
+  }
+}
+.fab-glow {
+  animation: fab-glow 1600ms ease-out 600ms 3;
+}
+
+/* 탭을 옮기면 옮긴 방향으로 스치듯 넘어가고, 탭 알약은 다음 탭으로 미끄러진다 */
+@keyframes vt-out-left {
+  to {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+}
+@keyframes vt-in-right {
+  from {
+    transform: translateX(32px);
+    opacity: 0;
+  }
+}
+@keyframes vt-out-right {
+  to {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+@keyframes vt-in-left {
+  from {
+    transform: translateX(-32px);
+    opacity: 0;
+  }
+}
+html[data-nav-dir='forward']::view-transition-old(root) {
+  animation: vt-out-left 140ms var(--ease-in) both;
+}
+html[data-nav-dir='forward']::view-transition-new(root) {
+  animation: vt-in-right 260ms var(--ease-out) both;
+}
+html[data-nav-dir='back']::view-transition-old(root) {
+  animation: vt-out-right 140ms var(--ease-in) both;
+}
+html[data-nav-dir='back']::view-transition-new(root) {
+  animation: vt-in-left 260ms var(--ease-out) both;
+}
+::view-transition-group(tab-pill) {
+  animation-duration: 420ms;
+  animation-timing-function: var(--spring);
+}
+
+/* 고른 줄: 체크 표시가 그려진다 */
+@keyframes check-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+}
+@keyframes check-pop {
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+.check-pop {
+  animation: check-pop 280ms var(--back-out) both;
+}
+.check-pop path {
+  stroke-dasharray: 24;
+  animation: check-draw 260ms 80ms var(--ease-out) both;
+}
+
+/* 키보드 키·타일: 손을 떼면 스프링으로 돌아온다 */
+.key-spring {
+  transition:
+    transform 420ms var(--spring),
+    box-shadow 200ms;
+}
+.key-spring:active {
+  transform: translateY(1px) scale(0.96);
+  transition-duration: 60ms;
 }

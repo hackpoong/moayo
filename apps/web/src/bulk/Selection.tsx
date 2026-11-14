@@ -19,6 +19,7 @@ import { Button } from '../components/ui.tsx';
 import { useData } from '../data/dataContext.ts';
 import { baseRow, newId, useMutations } from '../data/mutations.ts';
 import { assetIcon } from '../lib/assets.ts';
+import { suckInto } from '../lib/motion.ts';
 import { haptic } from '../lib/flash.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
 import { SelectionContext, type SelectionApi } from './selectionContext.ts';
@@ -417,11 +418,19 @@ function ActionSheet({ action, txs, onClose, onDone }: { action: Action; txs: Tr
             </div>
             <Button
               block
-              onClick={() => {
+              onClick={async () => {
                 haptic(15);
+                close();
+                // 시트가 내려간 뒤, 고른 줄들이 기준 줄로 빨려 들어가 하나가 된다.
+                await new Promise((r) => window.setTimeout(r, 200));
+                const rowOf = (id: string) => document.querySelector<HTMLElement>(`[data-tx-id="${id}"]`);
+                const lead = leadId ?? txs[0]!.id;
+                await suckInto(
+                  txs.filter((t) => t.id !== lead).map((t) => rowOf(t.id)).filter((el): el is HTMLElement => !!el),
+                  rowOf(lead),
+                );
                 void save('transactions', m);
                 for (const t of merge.originals) void save('transactions', t);
-                close();
                 onDone();
                 toast({
                   message: `${txs.length}건을 한 건으로 합쳤어요`,

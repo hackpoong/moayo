@@ -3,7 +3,9 @@ import { ArrowLeftRight, CircleAlert, Copy, Image as ImageIcon, Layers, Scissors
 import { useSelection } from '../bulk/selectionContext.ts';
 import { duplicate } from '../bulk/txEdit.ts';
 import { useMutations } from '../data/mutations.ts';
+import { collapse, play } from '../lib/motion.ts';
 import { useRowGestures } from '../lib/useRowGestures.ts';
+import { useEffect, useRef } from 'react';
 import { useToast } from './toastContext.ts';
 import { useData } from '../data/dataContext.ts';
 import { useOpenEditor } from '../editor/editorContext.ts';
@@ -23,12 +25,23 @@ export function TxRow({ tx, amount }: { tx: Transaction; amount?: number }) {
   const { save, remove } = useMutations();
   const toast = useToast();
   const selected = selection.selected.has(tx.id);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  // 고르는 순간 '통' 하고 살짝 눌렸다 튄다.
+  const wasSelected = useRef(selected);
+  useEffect(() => {
+    if (selected && !wasSelected.current) {
+      void play(btnRef.current, [{ transform: 'scale(1)' }, { transform: 'scale(0.96)', offset: 0.3 }, { transform: 'scale(1.015)', offset: 0.7 }, { transform: 'scale(1)' }], { duration: 300, easing: 'ease-out' });
+    }
+    wasSelected.current = selected;
+  }, [selected]);
   const mergedCount = data.mergedInto.get(tx.id)?.length ?? 0;
   const { dx, handlers, consumeClick } = useRowGestures({
     swipe: !selection.active,
     onLongPress: () => (selection.active ? selection.toggle(tx.id) : selection.start(tx.id)),
     onSwipeLeft: () => {
-      void remove('transactions', tx);
+      // 줄이 납작하게 접히며 사라진 뒤 지운다.
+      void collapse(rowRef.current).then(() => remove('transactions', tx));
       toast({ message: `‘${tx.merchant ?? '내역'}’ 지웠어요`, action: { label: '되돌리기', onClick: () => void save('transactions', { ...tx, deleted_at: null }) } });
     },
     onSwipeRight: () => {
@@ -59,7 +72,7 @@ export function TxRow({ tx, amount }: { tx: Transaction; amount?: number }) {
   const subText = [payText, tx.installment_months > 1 ? `${tx.installment_months}개월` : null].filter(Boolean).join(' · ');
 
   return (
-    <div className="relative -mx-2 overflow-hidden">
+    <div ref={rowRef} data-tx-id={tx.id} className="relative -mx-2 overflow-hidden">
       {dx !== 0 ? (
         <div className={`absolute inset-0 flex items-center px-5 text-sm font-semibold text-white ${dx > 0 ? 'justify-start bg-income' : 'justify-end bg-expense'}`} aria-hidden>
           {dx > 0 ? <Copy className="mr-1.5 size-4" /> : null}
@@ -68,6 +81,7 @@ export function TxRow({ tx, amount }: { tx: Transaction; amount?: number }) {
         </div>
       ) : null}
     <button
+      ref={btnRef}
       type="button"
       {...handlers}
       onClick={() => {
@@ -88,6 +102,13 @@ export function TxRow({ tx, amount }: { tx: Transaction; amount?: number }) {
       ) : (
         <EmojiCircle emoji={titleParts.icon ?? firstCat?.icon ?? null} fallbackColor={firstCat?.color} />
       )}
+      {selected ? (
+        <span className="check-pop absolute left-8 top-1 flex size-[18px] items-center justify-center rounded-full bg-brand text-brand-fg ring-2 ring-surface" aria-hidden>
+          <svg viewBox="0 0 24 24" className="size-3" fill="none" stroke="currentColor" strokeWidth={4} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12.5l4.5 4.5L19 7.5" />
+          </svg>
+        </span>
+      ) : null}
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
           <span className="truncate font-semibold">{title}</span>
