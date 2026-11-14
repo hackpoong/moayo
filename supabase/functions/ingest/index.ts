@@ -343,6 +343,7 @@ async function ingest(admin: SupabaseClient, body: IngestBody, userId: string, m
       fallbackDate: today,
       members: (people.data ?? []) as Member[],
       merchantRules: (renames.data ?? []) as MerchantRule[],
+      memberId,
     });
 
     let existing: Transaction[] = [];

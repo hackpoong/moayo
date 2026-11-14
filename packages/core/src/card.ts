@@ -186,3 +186,12 @@ export function cardHintMatches(hint: string | null | undefined, number: string 
   const l4 = last4 && /^\d{4}$/.test(last4) ? last4 : n ? n.slice(-4) : null;
   return cardNumberTokens(hint).some((t) => tokenMatches(t, n || null, l4));
 }
+
+/** 영수증에 가려 찍힌 이름('황*주')이 이 이름과 같은지. 가림표 자리는 아무 글자나. */
+export function maskedNameMatches(masked: string, name: string): boolean {
+  const m = [...masked.replace(/\s/g, '')];
+  const n = [...name.replace(/\s/g, '')];
+  if (m.length < 2 || m.length !== n.length) return false;
+  if (!m.some((c) => !MASK.test(c))) return false;
+  return m.every((c, i) => MASK.test(c) || c === n[i]);
+}

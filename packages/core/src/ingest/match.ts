@@ -55,7 +55,9 @@ export function scorePair(c: Candidate, t: Transaction, methods: readonly Paymen
     (sameDate &&
       ((c.original_amount !== null && c.original_amount === t.amount) ||
         (t.original_amount !== null && t.original_amount === c.amount) ||
-        (c.original_amount !== null && c.original_amount === t.original_amount)));
+        (c.original_amount !== null && c.original_amount === t.original_amount) ||
+        // 여러 결제수단 영수증: 먼저 들어온 카드 문자(카드 몫만)와 같은 결제
+        (c.payments?.some((p) => p.amount === t.amount) ?? false)));
   if (!amountMatch) return null;
   // 한쪽만 페이 앱 내역이면 이름·결제수단이 원래 다르게 찍힌다.
   const oneWrapped = isWrapperLabel(c.payment_label) !== isWrapperLabel(t.payment_label);
@@ -297,8 +299,16 @@ function describe(t: Pick<Transaction, 'merchant' | 'amount'>): string {
   return `${t.merchant ?? '이름 없음'} ${t.amount.toLocaleString('ko-KR')}원`;
 }
 
+function splitPayments(c: Candidate, ctx: MatchContext) {
+  if (!c.payments || c.payments.length < 2) return null;
+  const pays = c.payments.map((p) => ({ ...p, member_id: p.member_id ?? ctx.memberId }));
+  const lead = [...pays].sort((a, b) => b.amount - a.amount)[0]!;
+  return { pays, lead };
+}
+
 function createTx(c: Candidate, ctx: MatchContext, suspect: Transaction | null): Transaction {
   const method = c.payment_method_id ? ctx.paymentMethods.find((m) => m.id === c.payment_method_id) : null;
+  const split = splitPayments(c, ctx);
   const status = c.status === 'canceled' ? 'canceled' : suspect ? 'review' : 'confirmed';
   return {
     id: ctx.newId(),
@@ -312,13 +322,14 @@ function createTx(c: Candidate, ctx: MatchContext, suspect: Transaction | null):
     original_amount: c.original_amount,
     occurred_at: c.occurred_at,
     has_time: c.has_time,
-    cash_date: computeCashDate(c.date, method),
+    cash_date: split ? split.lead.cash_date : computeCashDate(c.date, method),
     cash_date_override: false,
     merchant: c.merchant,
     memo: c.memo,
-    payment_method_id: c.payment_method_id,
-    member_id: method?.owner_member_id ?? ctx.memberId,
-    installment_months: method?.type === 'credit_card' ? c.installment_months : 1,
+    payment_method_id: split ? split.lead.payment_method_id : c.payment_method_id,
+    member_id: split ? split.lead.member_id : (method?.owner_member_id ?? ctx.memberId),
+    installment_months: split ? 1 : method?.type === 'credit_card' ? c.installment_months : 1,
+    payments: split ? split.pays : [],
     splits: c.category_id && c.kind !== 'transfer' ? [{ category_id: c.category_id, amount: c.amount }] : [],
     tag_ids: [],
     approval_no: c.approval_no,
@@ -386,7 +397,22 @@ function merge(c: Candidate, t: Transaction, ctx: MatchContext, score: number | 
   if (t.splits.length === 0 && c.category_id && t.kind !== 'transfer' && c.kind === t.kind) set('splits', [{ category_id: c.category_id, amount: t.amount }]);
   if (c.status === 'canceled' && t.status !== 'canceled') set('status', 'canceled');
 
-  if (editable) {
+  // 카드 문자로 먼저 들어온 내역에, 영수증의 결제수단별 몫(상품권·마일리지 등)과 총액을 채운다.
+  const split = splitPayments(c, ctx);
+  if (editable && split && (t.payments?.length ?? 0) < 2 && split.pays.some((p) => p.amount === t.amount)) {
+    // 영수증에서 카드 자산을 못 찾았어도, 먼저 들어온 내역이 아는 카드를 그 몫에 쓴다.
+    split.pays = split.pays.map((p) =>
+      p.amount === t.amount && !p.payment_method_id && t.payment_method_id ? { ...p, payment_method_id: t.payment_method_id, member_id: t.member_id ?? p.member_id, cash_date: t.cash_date } : p,
+    );
+    split.lead = [...split.pays].sort((a, b) => b.amount - a.amount)[0]!;
+    set('amount', c.amount);
+    set('payments', split.pays);
+    next.payment_method_id = split.lead.payment_method_id ?? next.payment_method_id;
+    next.member_id = split.lead.member_id;
+    if (!t.cash_date_override) next.cash_date = split.lead.cash_date;
+    next.installment_months = 1;
+    next.splits = next.splits.length === 1 ? [{ ...next.splits[0]!, amount: c.amount }] : next.splits.length === 0 && c.category_id && c.kind === t.kind ? [{ category_id: c.category_id, amount: c.amount }] : [];
+  } else if (editable) {
     if (opts.correctAmount && c.amount !== t.amount) {
       set('amount', c.amount);
       next.splits = next.splits.length === 1 ? [{ ...next.splits[0]!, amount: c.amount }] : [];

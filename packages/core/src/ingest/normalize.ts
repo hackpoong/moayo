@@ -5,10 +5,12 @@
 //  * 결제수단 이름을 가족의 결제수단에 연결하고, 카테고리는 같은 가맹점의 예전 기록을 우선한다.
 
 import { fromKst } from '../kst.ts';
-import { cardHintMatches } from '../card.ts';
+import { computeCashDate } from '../cashDate.ts';
+import { cardHintMatches, maskedNameMatches } from '../card.ts';
+import { DEFAULT_ASSET_MARK } from '../defaultAssets.ts';
 import { splitIconName } from '../iconName.ts';
 import { matchTransferRule, memberTransferRules } from '../rules.ts';
-import type { Category, Member, MerchantRule, PaymentMethod, Transaction, TransactionSource, TransferRule } from '../types.ts';
+import type { Category, Member, MerchantRule, Payment, PaymentMethod, Transaction, TransactionSource, TransferRule } from '../types.ts';
 import { isWrapperLabel, merchantSimilarity, normalizeMerchant } from './text.ts';
 import type { Candidate, ExtractedItem, Extraction, SourceKind } from './types.ts';
 
@@ -25,7 +27,10 @@ export interface NormalizeContext {
   members?: Pick<Member, 'id' | 'household_id' | 'display_name' | 'emoji' | 'aliases' | 'deleted_at'>[];
   /** '앞으로도 계속 바꾸기' 규칙. */
   merchantRules?: Pick<MerchantRule, 'match_key' | 'set_merchant' | 'set_category_id' | 'set_payment_method_id' | 'deleted_at'>[];
+  /** 불러온 사람(현금·포인트·상품권 몫의 주인을 모를 때). */
+  memberId?: string | null;
 }
+
 
 const SOURCE_KIND_LABEL: Record<SourceKind, string> = {
   toss_list: '토스 캡처',
@@ -49,13 +54,18 @@ export function importMemo(item: ExtractedItem, merchant: string, sourceKind: So
   const lines: string[] = [];
   if (item.memo?.trim()) lines.push(item.memo.trim());
   lines.push(`업체명 : ${merchant}`);
-  const pay = [item.payment_label?.trim(), item.card_last4 ? `끝자리 ${item.card_last4}` : null].filter(Boolean).join(' · ');
+  const tenders = item.tenders ?? [];
+  const pay =
+    tenders.length > 1
+      ? tenders.map((t) => `${t.label ?? TENDER_LABEL[t.kind]} ${won(t.amount)}`).join(' · ')
+      : [item.payment_label?.trim(), item.card_last4 ? `끝자리 ${item.card_last4}` : null].filter(Boolean).join(' · ');
   if (pay) lines.push(`결제 : ${pay}`);
   const approval = [item.approval_no ? `승인 ${item.approval_no}` : null, (item.installment_months ?? 1) > 1 ? `${item.installment_months}개월 할부` : null]
     .filter(Boolean)
     .join(' · ');
   if (approval) lines.push(approval);
-  if (item.original_amount && Math.round(item.original_amount) !== amount)
+  // 영수증의 할인 전 합계는 메모에 적지 않는다(사용자 결정).
+  if (item.original_amount && Math.round(item.original_amount) !== amount && sourceKind !== 'receipt')
     lines.push(`원래 금액 : ${won(item.original_amount)}${item.status === 'partial_canceled' ? ' (부분취소)' : ''}`);
   if (item.foreign_currency && item.foreign_amount) lines.push(`해외 : ${item.foreign_amount} ${item.foreign_currency}`);
   lines.push(`출처 : ${SOURCE_KIND_LABEL[sourceKind]}`);
@@ -155,6 +165,7 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
     const rule = kind === 'transfer' ? null : (ctx.merchantRules ?? []).find((r) => !r.deleted_at && r.match_key === normalizeMerchant(rawMerchant));
     const ruleMethod = rule?.set_payment_method_id ? ctx.paymentMethods.find((m) => m.id === rule.set_payment_method_id && !m.deleted_at) : undefined;
     const method = ruleMethod ?? resolvePaymentMethod(item.payment_label, item.card_last4, ctx.paymentMethods, item.card_number_hint);
+    const payments = tenderPayments(item, amount, method ?? null, date, ctx);
     const named = rule?.set_merchant?.trim() || rawMerchant;
     // AI 가 고른 이모지를 제목 앞에 붙인다(이미 이모지로 시작하면 그대로).
     const merchant = item.emoji && splitIconName(named).icon === null ? `${item.emoji}${named}`.slice(0, 60) : named;
@@ -171,8 +182,9 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
       date,
       merchant,
       memo: importMemo(item, rawMerchant, extraction.source_kind, amount),
-      payment_method_id: method?.id ?? null,
+      payment_method_id: payments ? [...payments].sort((a, b) => b.amount - a.amount)[0]!.payment_method_id : (method?.id ?? null),
       payment_label: item.payment_label?.trim() || null,
+      ...(payments ? { payments } : {}),
       card_last4: item.card_last4,
       approval_no: item.approval_no,
       installment_months: Math.min(60, Math.max(1, item.installment_months ?? 1)),
@@ -187,6 +199,34 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
     });
   });
   return collapsePairs(candidates, ctx.paymentMethods);
+}
+
+const TENDER_LABEL = { card: '카드', cash: '현금', point: '포인트·마일리지', voucher: '상품권', other: '기타' } as const;
+
+/**
+ * 영수증을 여러 결제수단으로 나눠 낸 경우(카드 + 상품권 + 마일리지 …) 자산별 몫을 만든다.
+ * 몫의 합이 결제 총액과 다르면 믿지 않고 한 결제수단으로 둔다.
+ */
+function tenderPayments(item: ExtractedItem, amount: number, cardMethod: PaymentMethod | null, date: string, ctx: NormalizeContext): Payment[] | undefined {
+  const tenders = item.tenders ?? [];
+  if (tenders.length < 2 || tenders.reduce((a, t) => a + t.amount, 0) !== amount) return undefined;
+  const live = ctx.paymentMethods.filter((m) => !m.deleted_at && !m.archived);
+  const holderOf = (holder: string | null) =>
+    holder ? (ctx.members ?? []).find((m) => !m.deleted_at && [m.display_name, ...(m.aliases ?? [])].some((n) => maskedNameMatches(holder, n)))?.id : undefined;
+  const cards = tenders.filter((t) => t.kind === 'card');
+  const cardOf = (t: (typeof tenders)[number]) =>
+    resolvePaymentMethod(t.label ?? item.payment_label, null, live, t.card_number_hint) ?? (cards.length === 1 ? cardMethod : null);
+  const cardOwner = cards.map(cardOf).find((m) => m?.owner_member_id)?.owner_member_id ?? null;
+  return tenders.map((t) => {
+    const who = holderOf(t.holder) ?? cardOwner ?? ctx.memberId ?? null;
+    let pm: PaymentMethod | null = null;
+    if (t.kind === 'card') pm = cardOf(t);
+    else if (t.kind !== 'other') {
+      const mark = DEFAULT_ASSET_MARK[t.kind];
+      pm = live.find((m) => m.issuer === mark && m.owner_member_id === who) ?? live.find((m) => m.issuer === mark) ?? null;
+    }
+    return { payment_method_id: pm?.id ?? null, member_id: pm?.owner_member_id ?? who, amount: t.amount, cash_date: computeCashDate(date, pm ?? undefined) };
+  });
 }
 
 const isLabeled = (c: Candidate) => !!(c.payment_label || c.payment_method_id);

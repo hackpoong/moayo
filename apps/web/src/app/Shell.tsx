@@ -9,6 +9,7 @@ import { SelectionProvider } from '../bulk/Selection.tsx';
 import { Logo } from '../components/ui.tsx';
 import { DataProvider } from '../data/DataProvider.tsx';
 import { useRecurringGenerator } from '../data/useRecurringGenerator.ts';
+import { useDefaultAssets } from '../data/useDefaultAssets.ts';
 import { useClipboardOffer, useSharedInbox } from '../lib/inbound.ts';
 import { useToast } from '../components/toastContext.ts';
 import { EditorContext, type EditorRequest } from '../editor/editorContext.ts';
@@ -65,6 +66,7 @@ export function Shell() {
 function ShellLayout() {
   const household = useCurrentHousehold();
   useRecurringGenerator();
+  useDefaultAssets();
   const [editor, setEditor] = useState<{ key: number; request: EditorRequest } | null>(null);
   const openEditor = useCallback((request: EditorRequest = {}) => setEditor({ key: Date.now(), request }), []);
   const closeEditor = useCallback(() => setEditor(null), []);

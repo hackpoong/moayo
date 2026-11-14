@@ -1,6 +1,6 @@
 // AI·규칙 파서가 원문에서 뽑아낸 결과의 모양. 이미지·문자·푸시 모두 이 모양으로 모인다.
 
-import type { DateString, TransactionKind, TransactionSource } from '../types.ts';
+import type { DateString, Payment, TransactionKind, TransactionSource } from '../types.ts';
 
 export type SourceKind =
   | 'toss_list' // 토스 소비·지출 내역 목록 캡처
@@ -51,6 +51,19 @@ export interface ExtractedItem {
   category_hint: string | null;
   /** 가게·품목에 어울리는 이모지(AI). 제목 앞에 붙인다. */
   emoji?: string | null;
+  /** 영수증에서 여러 결제수단으로 나눠 낸 몫(카드 + 상품권 + 마일리지 등). */
+  tenders?: ExtractedTender[];
+}
+
+export type TenderKind = 'card' | 'cash' | 'point' | 'voucher' | 'other';
+
+export interface ExtractedTender {
+  kind: TenderKind;
+  label: string | null;
+  amount: number;
+  card_number_hint: string | null;
+  /** 포인트·마일리지 회원 이름(가려진 그대로, 예: 황*주). */
+  holder: string | null;
 }
 
 export interface Extraction {
@@ -75,6 +88,8 @@ export interface Candidate {
   card_last4: string | null;
   approval_no: string | null;
   installment_months: number;
+  /** 여러 결제수단으로 나눠 낸 경우의 자산별 몫(2개 이상일 때만). */
+  payments?: Payment[];
   category_id: string | null;
   line_items: ExtractedLine[];
   source: TransactionSource;

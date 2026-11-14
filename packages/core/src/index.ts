@@ -18,3 +18,4 @@ export * from './recurring.ts';
 export * from './activity.ts';
 export * from './order.ts';
 export * from './card.ts';
+export * from './defaultAssets.ts';

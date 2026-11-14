@@ -1,6 +1,6 @@
 // AI 가 돌려준 JSON 을 믿지 않고 모양을 맞춘다. 업체마다 조금씩 다르게 틀린다.
 
-import type { ExtractedItem, ExtractedLine, Extraction, SourceKind } from './types.ts';
+import type { ExtractedItem, ExtractedLine, ExtractedTender, Extraction, SourceKind, TenderKind } from './types.ts';
 
 const SOURCE_KINDS: SourceKind[] = ['toss_list', 'local_currency_app', 'receipt', 'card_statement', 'pay_history', 'bank_app', 'sms', 'push', 'other'];
 
@@ -43,7 +43,7 @@ function coerceItem(raw: unknown): ExtractedItem | null {
     kind: o.kind === 'income' ? 'income' : 'expense',
     status: oneOf(o.status, ['approved', 'canceled', 'partial_canceled', 'declined'] as const, 'approved'),
     payment_label: str(o.payment_label),
-    card_last4: str(o.card_last4)?.replace(/\D/g, '').slice(-4) || null,
+    card_last4: last4Only(o.card_last4),
     card_number_hint: str(o.card_number_hint)?.slice(0, 40) ?? null,
     approval_no: str(o.approval_no),
     greyed: o.greyed === true,
@@ -61,7 +61,30 @@ function coerceItem(raw: unknown): ExtractedItem | null {
       .filter((l): l is ExtractedLine => l !== null),
     category_hint: str(o.category_hint),
     emoji: emojiOnly(o.emoji),
+    tenders: (Array.isArray(o.tenders) ? o.tenders : [])
+      .map((t): ExtractedTender | null => {
+        const x = (t && typeof t === 'object' ? t : {}) as Record<string, unknown>;
+        const a = int(x.amount);
+        if (!a) return null;
+        return {
+          kind: oneOf(x.kind, ['card', 'cash', 'point', 'voucher', 'other'] as const, 'other') as TenderKind,
+          label: str(x.label),
+          amount: a,
+          card_number_hint: str(x.card_number_hint)?.slice(0, 40) ?? null,
+          holder: str(x.holder)?.slice(0, 20) ?? null,
+        };
+      })
+      .filter((t): t is ExtractedTender => t !== null)
+      .slice(0, 6),
   };
+}
+
+/** 끝 4자리가 모두 숫자로 보일 때만('493*' 처럼 가려졌으면 버린다). */
+function last4Only(v: unknown): string | null {
+  const s = str(v)?.replace(/[\s-]/g, '');
+  if (!s) return null;
+  const tail = s.slice(-4);
+  return /^\d{4}$/.test(tail) ? tail : null;
 }
 
 /** JSON 스키마의 type: [x, 'null'] 를 anyOf 로 바꾼다(업체마다 지원하는 표기가 달라서). */

@@ -18,7 +18,7 @@ export const EXTRACTION_SCHEMA = {
         additionalProperties: false,
         required: [
           'date', 'time', 'merchant', 'amount', 'original_amount', 'kind', 'status', 'payment_label', 'card_last4', 'card_number_hint', 'approval_no',
-          'greyed', 'foreign_currency', 'foreign_amount', 'installment_months', 'memo', 'line_items', 'category_hint', 'emoji',
+          'greyed', 'foreign_currency', 'foreign_amount', 'installment_months', 'memo', 'line_items', 'category_hint', 'emoji', 'tenders',
         ],
         properties: {
           date: { ...nullable('string'), description: 'YYYY-MM-DD' },
@@ -48,6 +48,22 @@ export const EXTRACTION_SCHEMA = {
           },
           category_hint: nullable('string'),
           emoji: { ...nullable('string'), description: '가게·품목에 가장 잘 어울리는 이모지 1개. 모르겠으면 null' },
+          tenders: {
+            type: 'array',
+            description: '영수증에서 여러 결제수단으로 나눠 낸 경우의 결제수단별 금액. 한 가지로만 냈거나 영수증이 아니면 빈 배열',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['kind', 'label', 'amount', 'card_number_hint', 'holder'],
+              properties: {
+                kind: { type: 'string', enum: ['card', 'cash', 'point', 'voucher', 'other'] },
+                label: { ...nullable('string'), description: '영수증에 적힌 결제수단 이름(예: 신한프리미엄, 신세계상품권, 마일리지사용)' },
+                amount: { type: 'integer', description: '이 결제수단으로 낸 금액(양수)' },
+                card_number_hint: { ...nullable('string'), description: '이 결제수단 줄의 카드번호 그대로(가림표 포함)' },
+                holder: { ...nullable('string'), description: '포인트·마일리지 회원 이름이 보이면 그대로(예: 황*주)' },
+              },
+            },
+          },
         },
       },
     },
@@ -100,7 +116,13 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   · 캐시백 지급은 kind = "income", merchant = "<앱 이름> 캐시백"(예: "여민전 캐시백").
   · 가게 이름 없이 "충전"만 있는 줄은 merchant = "<앱 이름> 충전"(예: "온통대전 충전"). 충전은 들어온 돈이 아니라 옮긴 돈이므로 kind 는 expense 로 둔다.
   · 화면 위의 잔액, "충전금액·사용금액" 합계, 조회 기간은 거래가 아니다.
-- 영수증: 최종 결제 금액 한 건. 품목은 line_items 에(이름, 금액, 수량). 카드 끝 4자리·승인번호·할부를 적는다.
+- 영수증: 결제 한 건. 품목은 line_items 에(이름, 금액, 수량). 승인번호·할부를 적는다.
+  · amount 는 손님이 실제로 낸 총액('받은금액'·'결제금액 합계'·'합계'에서 할인을 뺀 값)이다. 카드 승인 금액만 적으면 안 된다.
+  · 할인 전 '합계'(정가 합)는 original_amount.
+  · 여러 결제수단으로 나눠 냈으면(신용카드 + 상품권 + 마일리지·포인트 사용 + 현금 등) 결제수단마다 tenders 에 한 줄씩 적는다. kind: 신용·체크카드 card, 현금 cash, 포인트·마일리지·캐시 사용 point, 상품권·기프트카드 voucher. tenders 금액의 합은 amount 와 같아야 한다.
+  · '적립'(SPOINT 적립, 마일리지 적립)은 결제가 아니므로 tenders 에 넣지 않는다. '현금영수증'은 현금으로 낸 금액이 아니라 소득공제 표시라 결제수단이 아니다(상품권·현금 결제분에 붙는다).
+  · payment_label 은 금액이 가장 큰 결제수단(보통 카드 이름, 예: 신한프리미엄).
+  · card_last4 는 끝 4자리가 모두 숫자로 보일 때만. "51559450****493*" 처럼 끝이 가려져 있으면 card_last4 는 null, card_number_hint 에 그대로.
 - 카드 명세서: 이용 건마다 한 줄. 할부는 installment_months.
 - 페이 결제내역(네이버페이·카카오페이 등): 카드마다 위에 상태("결제완료", "결제취소", "부분취소", "구매확정완료", "배송완료")가, 그 아래 가게 또는 상품 이름, 금액, "11. 13. 12:10 결제" 같은 날짜·시각이 있다.
   · 상태: "결제취소" = canceled, "부분취소" = partial_canceled(보이는 금액을 amount 에), 나머지는 approved.
@@ -110,7 +132,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 - 문자·알림: 보통 한 건. 누적·잔액 금액은 amount 가 아니다.
 
 [카테고리]
-category_hint 는 아래 목록에서 가장 알맞은 이름을 그대로 고르고, 알맞은 것이 없으면 null.
+category_hint 는 아래 목록에서 가장 알맞은 이름을 그대로 고르고, 알맞은 것이 없으면 null. 품목을 보고 고른다(예: 테이블·소파·의자·침대·가전제품은 '가구·가전'이 있으면 그것, 휴지·세제는 생활용품).
 emoji 는 가게·품목에 가장 잘 어울리는 이모지 하나(예: 맥도날드 🍔, 수목원 🌴, 찜질방 ♨️, 주유소 ⛽, 약국 💊). 확실하지 않으면 null.
 
 [이 가족의 정보 — 위 규칙은 늘 같고, 아래만 바뀐다]

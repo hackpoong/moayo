@@ -11,6 +11,7 @@ import { setPref, usePrefs, type AiQuality } from '../lib/prefs.ts';
 import { db, describeError } from '../lib/supabase.ts';
 import { useOpenEditor } from './editorContext.ts';
 import { useMutations } from '../data/mutations.ts';
+import { findPaper } from '../lib/paperCrop.ts';
 import { MAX_ATTACHMENTS, preparePhoto, queuePhotoChanges } from '../lib/photos.ts';
 
 type Mode = 'image' | 'text';
@@ -105,6 +106,12 @@ async function prepare(file: File): Promise<Piece[]> {
     );
   };
   try {
+    // 바닥에 놓고 찍은 영수증: 종이만 잘라 한 장으로 보낸다(글자가 2~3배 커져 더 잘 읽힌다).
+    const paper = phoneShot ? null : findPaper(bitmap, bitmap.width, bitmap.height);
+    if (paper) {
+      const scale = Math.min(1, 900 / paper.w, 3200 / paper.h);
+      return [await toJpeg(paper.x, paper.y, paper.w, paper.h, scale)];
+    }
     if (height / width <= 2.6) {
       const scale = Math.min(1, 1800 / Math.max(width, height), 1100 / Math.min(width, height));
       return [await toJpeg(0, top, width, height, scale)];

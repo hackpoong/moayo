@@ -24,6 +24,10 @@ export function extractionIssues(ex: Extraction, today: string, opts: { isImage:
     if (item.original_amount !== null && item.original_amount < item.amount && item.status !== 'partial_canceled')
       issues.push({ index, reason: '할인 전 금액이 최종 금액보다 작음' });
     if (item.time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(item.time)) issues.push({ index, reason: `시각이 이상함: ${item.time}` });
+    // 여러 결제수단 영수증: 몫의 합이 총액과 달라야 할 이유가 없다(카드 금액만 총액으로 적는 실수가 잦다).
+    const tenders = item.tenders ?? [];
+    if (tenders.length >= 2 && tenders.reduce((a, t) => a + t.amount, 0) !== item.amount) issues.push({ index, reason: '결제수단별 금액 합이 총액과 다름' });
+    if (tenders.length === 1 && tenders[0]!.amount !== item.amount) issues.push({ index, reason: '결제수단 금액과 총액이 다름' });
   });
   return issues;
 }
