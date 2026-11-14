@@ -28,6 +28,10 @@ const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const DEFAULT_PROVIDER = (Deno.env.get('AI_PROVIDER') ?? 'anthropic') as Provider;
 const DEFAULT_MODEL = Deno.env.get('AI_MODEL') ?? 'claude-haiku-5-5';
 const DEFAULT_EFFORT = (Deno.env.get('AI_EFFORT') || undefined) as Effort | undefined;
+// '정확하게'를 고르면 쓰는 모델(없으면 기본 모델).
+const ACCURATE_PROVIDER = (Deno.env.get('AI_PROVIDER_ACCURATE') || Deno.env.get('AI_PROVIDER') || 'anthropic') as Provider;
+const ACCURATE_MODEL = Deno.env.get('AI_MODEL_ACCURATE') || null;
+const ACCURATE_EFFORT = (Deno.env.get('AI_EFFORT_ACCURATE') || undefined) as Effort | undefined;
 // 싼 모델을 먼저 쓰고, 결과가 미심쩍을 때만 위의 모델로 다시 읽는다(비워 두면 처음부터 위 모델).
 const FAST_PROVIDER = (Deno.env.get('AI_PROVIDER_FAST') || Deno.env.get('AI_PROVIDER') || 'anthropic') as Provider;
 const FAST_MODEL = Deno.env.get('AI_MODEL_FAST') || null;
@@ -51,6 +55,8 @@ interface IngestBody {
   app_package?: string;
   /** 앱이 계산한 이미지 지문(256비트, 16진수). 거의 같은 사진을 다시 올리면 AI 를 다시 부르지 않는다. */
   image_phash?: string;
+  /** 'accurate' 면 더 정확한(비싼) 모델로. 모델 이름은 서버가 정한다. */
+  quality?: 'fast' | 'accurate';
 }
 
 /** 16진수 지문 두 개의 다른 비트 수. */
@@ -175,11 +181,13 @@ async function ingest(admin: SupabaseClient, body: IngestBody, userId: string, m
   // 같은 원문을 다시 보내면 처음 결과를 그대로 돌려준다(재전송·더블탭 대비).
   const { data: previous } = await admin
     .from('raw_inputs')
-    .select('id, status, result')
+    .select('id, status, result, model')
     .eq('household_id', householdId)
     .eq('content_hash', hash)
     .maybeSingle();
-  if (previous?.status === 'done') return { ...(previous.result as object), raw_input_id: previous.id, repeated: true };
+  // '정확하게'로 다시 읽기를 고르면, 예전에 다른 모델로 읽은 결과는 다시 쓰지 않는다.
+  const wantsReread = body.quality === 'accurate' && !!ACCURATE_MODEL && previous?.model !== ACCURATE_MODEL;
+  if (previous?.status === 'done' && !wantsReread) return { ...(previous.result as object), raw_input_id: previous.id, repeated: true };
 
   const rawId = previous?.id ?? crypto.randomUUID();
   if (!previous) {
@@ -225,7 +233,7 @@ async function ingest(admin: SupabaseClient, body: IngestBody, userId: string, m
     if (!image && body.text) extraction = parseSms(body.text, today);
 
     // 거의 같은 사진(같은 화면을 다시 캡처해 시계만 다른 경우 등)은 예전에 읽은 결과를 다시 쓴다.
-    if (!extraction && image && body.image_phash && /^[0-9a-f]{64}$/.test(body.image_phash)) {
+    if (!extraction && !wantsReread && image && body.image_phash && /^[0-9a-f]{64}$/.test(body.image_phash)) {
       const { data: recent } = await admin
         .from('raw_inputs')
         .select('id, image_phash, extraction')
@@ -257,7 +265,10 @@ async function ingest(admin: SupabaseClient, body: IngestBody, userId: string, m
         incomeCategories: categories.filter((c) => c.kind === 'income' && !c.archived).map((c) => c.name),
       });
       const input = { system, instruction: image ? USER_INSTRUCTION_IMAGE : USER_INSTRUCTION_TEXT + maskSensitive(body.text!), image };
-      ai = await readWithCascade(input, today, !!image);
+      ai =
+        body.quality === 'accurate' && ACCURATE_MODEL
+          ? await extract(ACCURATE_PROVIDER, ACCURATE_MODEL, { ...input, effort: ACCURATE_EFFORT })
+          : await readWithCascade(input, today, !!image);
       extraction = ai.extraction;
       parser = `llm:${ai.provider}`;
     }

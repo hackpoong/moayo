@@ -17,11 +17,15 @@ export default defineConfig({
         short_name: '모아요',
         description: '가족이 함께 쓰는 가계부',
         lang: 'ko',
+        id: '/',
+        scope: '/',
         start_url: '/',
         display: 'standalone',
+        display_override: ['standalone'],
         orientation: 'portrait',
+        // 상태 표시줄·시작 화면을 앱 배경색과 맞춘다.
         background_color: '#f5f6f8',
-        theme_color: '#4f46e5',
+        theme_color: '#f5f6f8',
         icons: [
           { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' },

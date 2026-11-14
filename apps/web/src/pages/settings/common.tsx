@@ -5,7 +5,7 @@ import { Link } from 'react-router';
 export function SettingsHeader({ title, action }: { title: string; action?: ReactNode }) {
   return (
     <header className="flex items-center gap-1">
-      <Link to="/more" aria-label="더보기로" className="-ml-2 rounded-full p-2 text-muted hover:bg-surface-2">
+      <Link viewTransition to="/more" aria-label="더보기로" className="-ml-2 rounded-full p-2 text-muted hover:bg-surface-2">
         <ChevronLeft className="size-6" aria-hidden />
       </Link>
       <h1 className="flex-1 text-2xl font-bold">{title}</h1>

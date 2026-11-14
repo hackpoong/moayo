@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router';
 import { Splash } from '../components/ui.tsx';
 import { useAuth } from '../lib/authContext.ts';
@@ -17,9 +18,10 @@ import { PaymentMethodsPage } from '../pages/settings/PaymentMethods.tsx';
 import { TagsPage } from '../pages/settings/Tags.tsx';
 import { TransferRulesPage } from '../pages/settings/TransferRules.tsx';
 import { SetupNeeded } from '../pages/SetupNeeded.tsx';
-import { Stats } from '../pages/Stats.tsx';
 import { Transactions } from '../pages/Transactions.tsx';
 import { Shell } from './Shell.tsx';
+
+const Stats = lazy(() => import('../pages/Stats.tsx').then((m) => ({ default: m.Stats })));
 
 export function App() {
   if (!supabase) return <SetupNeeded />;
@@ -33,7 +35,14 @@ export function App() {
             <Route index element={<Home />} />
             <Route path="/transactions" element={<Transactions />} />
             <Route path="/calendar" element={<CalendarPage />} />
-            <Route path="/stats" element={<Stats />} />
+            <Route
+              path="/stats"
+              element={
+                <Suspense fallback={<p className="py-10 text-center text-sm text-muted">불러오는 중…</p>}>
+                  <Stats />
+                </Suspense>
+              }
+            />
             <Route path="/more/payment-methods" element={<PaymentMethodsPage />} />
             <Route path="/more/categories" element={<CategoriesPage />} />
             <Route path="/more/tags" element={<TagsPage />} />

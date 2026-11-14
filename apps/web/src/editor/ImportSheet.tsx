@@ -7,6 +7,7 @@ import { Button } from '../components/ui.tsx';
 import { useData, useDataContext } from '../data/dataContext.ts';
 import { shortDate } from '../lib/format.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
+import { setPref, usePrefs, type AiQuality } from '../lib/prefs.ts';
 import { db, describeError } from '../lib/supabase.ts';
 import { useOpenEditor } from './editorContext.ts';
 
@@ -118,6 +119,7 @@ async function prepare(file: File): Promise<Piece[]> {
 export function ImportSheet({ initialMode = 'image', onClose }: { initialMode?: Mode; onClose: () => void }) {
   const household = useCurrentHousehold();
   const { engine } = useDataContext();
+  const { aiQuality } = usePrefs();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [text, setText] = useState('');
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -155,6 +157,7 @@ export function ImportSheet({ initialMode = 'image', onClose }: { initialMode?: 
   };
 
   const addFiles = (files: FileList | null) => {
+    const quality: AiQuality = aiQuality;
     if (!files?.length) return;
     const month = new Date().toISOString().slice(0, 7);
     const list = [...files];
@@ -176,7 +179,7 @@ export function ImportSheet({ initialMode = 'image', onClose }: { initialMode?: 
             const { error } = await db().storage.from('inputs').upload(path, blob, { contentType: 'image/jpeg', upsert: true });
             if (error) throw new Error(`올리지 못했습니다: ${error.message}`);
             update(id, { state: 'reading' });
-            const r = await call({ source: 'screenshot', image_path: path, image_phash: phash });
+            const r = await call({ source: 'screenshot', image_path: path, image_phash: phash, quality: quality });
             total.read += r.read;
             total.created += r.created;
             total.merged += r.merged;
@@ -232,7 +235,8 @@ export function ImportSheet({ initialMode = 'image', onClose }: { initialMode?: 
         </div>
 
         {mode === 'image' ? (
-          <div>
+          <div className="space-y-3">
+            <QualityPicker value={aiQuality} onChange={(q) => setPref('aiQuality', q)} />
             <input ref={fileInput} type="file" accept="image/*" multiple className="hidden" onChange={(e) => addFiles(e.target.files)} />
             <button
               type="button"
@@ -243,7 +247,7 @@ export function ImportSheet({ initialMode = 'image', onClose }: { initialMode?: 
               <span className="font-semibold">사진 고르기 (여러 장 가능)</span>
               <span className="text-sm text-muted">영수증, 토스·네이버페이 내역 캡처, 여민전 이용내역, 카드 명세서</span>
             </button>
-            <p className="mt-2 text-xs leading-relaxed text-muted">
+            <p className="text-xs leading-relaxed text-muted">
               겹치게 찍은 캡처도 괜찮습니다. 이미 있는 내역은 다시 넣지 않고, 빠진 정보만 채웁니다. 광고·추천 영역은 빼고 읽습니다.
             </p>
           </div>
@@ -279,6 +283,39 @@ export function ImportSheet({ initialMode = 'image', onClose }: { initialMode?: 
         ) : null}
       </div>
     </Sheet>
+  );
+}
+
+const QUALITY: { value: AiQuality; title: string; hint: string }[] = [
+  { value: 'fast', title: '빠르게', hint: '1장 약 7원' },
+  { value: 'accurate', title: '정확하게', hint: '1장 약 27원' },
+];
+
+/** 사진을 읽을 AI 고르기. 고른 값은 이 기기에 기억한다. */
+function QualityPicker({ value, onChange }: { value: AiQuality; onChange: (q: AiQuality) => void }) {
+  return (
+    <div>
+      <div role="radiogroup" aria-label="읽는 AI" className="grid grid-cols-2 gap-2">
+        {QUALITY.map((q) => (
+          <button
+            key={q.value}
+            type="button"
+            role="radio"
+            aria-checked={q.value === value}
+            onClick={() => onChange(q.value)}
+            className={`press rounded-xl border px-3 py-2.5 text-left transition-colors ${q.value === value ? 'border-brand bg-brand-soft' : 'border-line bg-surface'}`}
+          >
+            <span className={`block text-[15px] font-semibold ${q.value === value ? 'text-brand' : ''}`}>{q.title}</span>
+            <span className="block text-xs text-muted">{q.hint}</span>
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-xs text-muted">
+        {value === 'fast'
+          ? '보통은 이걸로 충분합니다. 틀린 게 보이면 같은 사진을 ‘정확하게’로 다시 넣으세요.'
+          : '더 정확하지만 4배쯤 비쌉니다. 긴 스크롤 캡처는 여러 조각으로 나눠 읽어서 조각 수만큼 듭니다.'}
+      </p>
+    </div>
   );
 }
 

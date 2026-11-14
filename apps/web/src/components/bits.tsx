@@ -82,7 +82,7 @@ export function Chip({ active, onClick, children, className = '' }: { active?: b
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${active ? 'bg-brand text-brand-fg' : 'bg-surface-2 text-fg'} ${className}`}
+      className={`press inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${active ? 'bg-brand text-brand-fg' : 'bg-surface-2 text-fg'} ${className}`}
     >
       {children}
     </button>

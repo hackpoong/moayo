@@ -4,12 +4,16 @@ import type { DateBasis } from '@moayo/core';
 import { useSyncExternalStore } from 'react';
 import { readJson, writeJson } from './storage.ts';
 
+export type AiQuality = 'fast' | 'accurate';
+
 interface Prefs {
   basis: DateBasis;
+  /** 사진을 읽을 때 쓸 AI: 빠르고 싼 모델 / 정확한 모델. */
+  aiQuality: AiQuality;
 }
 
 const KEY = 'moayo.prefs';
-const DEFAULTS: Prefs = { basis: 'occurred' };
+const DEFAULTS: Prefs = { basis: 'occurred', aiQuality: 'fast' };
 
 let prefs: Prefs = { ...DEFAULTS, ...(readJson<Partial<Prefs>>(KEY) ?? {}) };
 const listeners = new Set<() => void>();

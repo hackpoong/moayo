@@ -3,7 +3,7 @@ import { EmptyState } from '../../components/bits.tsx';
 import { Card, ErrorNote } from '../../components/ui.tsx';
 import { monthLabel } from '../../lib/format.ts';
 import { SettingsHeader } from './common.tsx';
-import { KRW_PER_USD, summarizeUsage, useAiUsage } from './aiUsageData.ts';
+import { KRW_PER_USD, summarizeUsage, useAiUsage, usageByModel } from './aiUsageData.ts';
 
 const won = (usd: number) => formatWon(Math.round(usd * KRW_PER_USD));
 const usd = (v: number) => `$${v < 0.01 && v > 0 ? v.toFixed(4) : v.toFixed(2)}`;
@@ -31,6 +31,7 @@ export function AiUsagePage() {
   const projected = (current.costUsd / d) * daysInMonth(y, m);
   const perCall = current.ai ? current.costUsd / current.ai : null;
   const shown = months.filter((mo) => mo.month >= shiftMonth(thisMonth, -5));
+  const byModel = usageByModel(rows, thisMonth);
 
   return (
     <div className="space-y-4">
@@ -49,6 +50,21 @@ export function AiUsagePage() {
         </div>
         {current.failed ? <p className="mt-3 text-xs text-muted">실패 {current.failed}건(실패한 요청은 보통 비용이 들지 않습니다)</p> : null}
       </Card>
+
+      {byModel.length ? (
+        <Card>
+          <h2 className="font-semibold">{monthLabel(thisMonth)} 모델별</h2>
+          <ul className="mt-2 divide-y divide-line text-sm">
+            {byModel.map((m) => (
+              <li key={m.model} className="tabular flex items-center gap-3 py-2">
+                <span className="min-w-0 flex-1 truncate">{modelLabel(m.model)}</span>
+                <span className="text-muted">{m.calls}건 · 건당 {won(m.costUsd / m.calls)}</span>
+                <span className="w-20 text-right font-semibold">{won(m.costUsd)}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
 
       <Card>
         <h2 className="font-semibold">월별</h2>
@@ -86,7 +102,7 @@ export function AiUsagePage() {
         <h2 className="font-semibold">알아 두기</h2>
         <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted">
           <li>
-            지금 쓰는 모델: <b className="text-fg">{latestModel ?? '아직 기록 없음'}</b>
+            마지막으로 쓴 모델: <b className="text-fg">{latestModel ? modelLabel(latestModel) : '아직 기록 없음'}</b>
           </li>
           <li>비용은 요청마다 받은 토큰 수에 모델 단가를 곱한 추정치입니다. 실제 청구액은 AI 업체 콘솔에서 확인하세요.</li>
           <li>원화는 1달러 ≈ {KRW_PER_USD.toLocaleString('ko-KR')}원으로 환산했습니다.</li>
@@ -96,6 +112,18 @@ export function AiUsagePage() {
       </Card>
     </div>
   );
+}
+
+/** 'gemini-3.5-flash-lite' → '빠르게 (Gemini 3.5 Flash-Lite)'. */
+function modelLabel(model: string): string {
+  const pretty = model
+    .replace(/^gemini-/, 'Gemini ')
+    .replace(/^claude-/, 'Claude ')
+    .replace(/-flash-lite$/, ' Flash-Lite')
+    .replace(/-flash$/, ' Flash');
+  if (model === 'gemini-3.5-flash-lite') return `빠르게 · ${pretty}`;
+  if (model === 'gemini-3.5-flash') return `정확하게 · ${pretty}`;
+  return pretty;
 }
 
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {

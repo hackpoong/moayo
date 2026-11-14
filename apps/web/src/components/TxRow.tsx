@@ -23,7 +23,7 @@ export function TxRow({ tx, amount }: { tx: Transaction; amount?: number }) {
   ].filter(Boolean);
 
   return (
-    <button type="button" onClick={() => openEditor({ tx })} className="flex w-full items-center gap-3 py-2.5 text-left active:opacity-60">
+    <button type="button" onClick={() => openEditor({ tx })} className="press flex w-full items-center gap-3 py-2.5 text-left active:opacity-70">
       {tx.kind === 'transfer' ? (
         <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-transfer" aria-hidden>
           <ArrowLeftRight className="size-5" />

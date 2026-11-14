@@ -134,7 +134,7 @@ export function More() {
 
       <nav className="divide-y divide-line rounded-2xl bg-surface px-4" aria-label="설정">
         {SETTINGS.map((item) => (
-          <Link key={item.to} to={item.to} className="flex h-14 items-center gap-3">
+          <Link key={item.to} viewTransition to={item.to} className="flex h-14 items-center gap-3">
             <item.icon className="size-5 text-muted" aria-hidden />
             <span className="flex-1 font-medium">{item.label}</span>
             {item.to === '/more/ai-usage' ? <AiUsagePreview /> : null}

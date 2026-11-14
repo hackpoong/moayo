@@ -24,6 +24,25 @@ export interface MonthUsage {
   outputTokens: number;
 }
 
+export interface ModelUsage {
+  model: string;
+  calls: number;
+  costUsd: number;
+}
+
+/** 모델별 건수·비용(최근 것 위주). */
+export function usageByModel(rows: readonly UsageRow[], month: string): ModelUsage[] {
+  const map = new Map<string, ModelUsage>();
+  for (const r of rows) {
+    if (!r.model || !r.parser?.startsWith('llm:') || toKstDate(r.created_at).slice(0, 7) !== month) continue;
+    const m = map.get(r.model) ?? { model: r.model, calls: 0, costUsd: 0 };
+    m.calls += 1;
+    m.costUsd += r.usage?.cost_usd ?? 0;
+    map.set(r.model, m);
+  }
+  return [...map.values()].sort((a, b) => b.costUsd - a.costUsd);
+}
+
 export function summarizeUsage(rows: readonly UsageRow[]): { months: MonthUsage[]; latestModel: string | null } {
   const byMonth = new Map<string, MonthUsage>();
   let latestModel: string | null = null;

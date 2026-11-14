@@ -21,7 +21,7 @@ export function Button({ variant = 'primary', busy, block, className = '', child
     <button
       type="button"
       disabled={disabled || busy}
-      className={`inline-flex h-12 items-center justify-center gap-2 rounded-xl px-5 text-[15px] font-semibold transition-opacity disabled:opacity-50 ${VARIANT[variant]} ${block ? 'w-full' : ''} ${className}`}
+      className={`press inline-flex h-12 items-center justify-center gap-2 rounded-xl px-5 text-[15px] font-semibold transition-opacity disabled:opacity-50 ${VARIANT[variant]} ${block ? 'w-full' : ''} ${className}`}
       {...rest}
     >
       {busy ? <LoaderCircle className="size-5 animate-spin" aria-hidden /> : null}
@@ -63,7 +63,7 @@ export function ErrorNote({ children }: { children: ReactNode }) {
 
 export function Splash() {
   return (
-    <div className="flex h-full items-center justify-center" aria-busy="true" aria-label="불러오는 중">
+    <div className="flex min-h-dvh items-center justify-center" aria-busy="true" aria-label="불러오는 중">
       <LoaderCircle className="size-7 animate-spin text-muted" aria-hidden />
     </div>
   );
@@ -72,7 +72,7 @@ export function Splash() {
 /** 로그인·가입 화면처럼 가운데에 좁게 놓는 화면의 틀. */
 export function CenteredPage({ children }: { children: ReactNode }) {
   return (
-    <main className="pt-safe pb-safe mx-auto flex min-h-full w-full max-w-md flex-col justify-center gap-6 px-5 py-10">
+    <main className="pt-safe pb-safe mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-5 py-10">
       {children}
     </main>
   );

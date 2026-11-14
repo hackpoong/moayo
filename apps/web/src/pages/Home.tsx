@@ -2,6 +2,7 @@ import { formatWon, inRange, monthRange, todayKst, totals } from '@moayo/core';
 import { ChevronRight, CircleAlert } from 'lucide-react';
 import { Link } from 'react-router';
 import { BasisToggle, EmptyState } from '../components/bits.tsx';
+import { InstallPrompt } from '../components/InstallPrompt.tsx';
 import { TxRow } from '../components/TxRow.tsx';
 import { ImportButtons } from '../editor/ImportSheet.tsx';
 import { useData, useDataReady } from '../data/dataContext.ts';
@@ -45,6 +46,8 @@ export function Home() {
           </span>
         </div>
       </section>
+
+      <InstallPrompt />
 
       <ImportButtons onPick={(mode) => openEditor({ importMode: mode })} />
 

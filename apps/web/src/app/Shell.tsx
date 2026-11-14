@@ -44,8 +44,8 @@ function ShellLayout() {
 
   return (
     <EditorContext.Provider value={openEditor}>
-      <div className="mx-auto flex h-full w-full max-w-6xl">
-        <aside className="hidden w-60 shrink-0 flex-col gap-1 border-r border-line p-4 md:flex">
+      <div className="mx-auto flex min-h-dvh w-full max-w-6xl">
+        <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-1 border-r border-line p-4 md:flex">
           <div className="mb-4 flex items-center gap-3 px-2">
             <Logo className="size-9" />
             <div className="min-w-0">
@@ -74,6 +74,7 @@ function ShellLayout() {
               key={tab.to}
               to={tab.to}
               end={tab.end}
+              viewTransition
               className={({ isActive }) =>
                 `flex h-11 items-center gap-3 rounded-xl px-3 text-[15px] font-medium ${isActive ? 'bg-brand-soft text-brand' : 'text-muted hover:bg-surface-2'}`
               }
@@ -88,7 +89,7 @@ function ShellLayout() {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <main className="pt-safe min-h-0 flex-1 overflow-y-auto">
+          <main className="pt-safe flex-1">
             <div className="mx-auto w-full max-w-2xl px-4 pb-28 pt-5 md:pb-10 md:pt-8">
               <div className="mb-2 flex justify-end empty:hidden md:hidden">
                 <SyncBadge />
@@ -101,18 +102,19 @@ function ShellLayout() {
             type="button"
             aria-label="내역 추가"
             onClick={() => openEditor()}
-            className="fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] right-4 z-10 flex size-14 items-center justify-center rounded-full bg-brand text-brand-fg shadow-lg shadow-black/20 active:scale-95 md:hidden"
+            className="press vt-fab fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] right-4 z-10 flex size-14 items-center justify-center rounded-full bg-brand text-brand-fg shadow-lg shadow-black/20 active:scale-95 md:hidden"
           >
             <Plus className="size-7" aria-hidden />
           </button>
 
-          <nav className="pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface/95 backdrop-blur md:hidden" aria-label="주 메뉴">
+          <nav className="vt-tabbar pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface/95 backdrop-blur md:hidden" aria-label="주 메뉴">
             <ul className="mx-auto flex max-w-2xl">
               {TABS.map((tab) => (
                 <li key={tab.to} className="flex-1">
                   <NavLink
                     to={tab.to}
                     end={tab.end}
+                    viewTransition
                     className={({ isActive }) =>
                       `flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium ${isActive ? 'text-brand' : 'text-muted'}`
                     }
