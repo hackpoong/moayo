@@ -21,6 +21,11 @@
   /* 키보드 자리 입력판·선택 모드의 어두운 막대(어두운 화면에서도 어두운 채로) */
   --app-bar: #15171c;
   --app-bar-fg: #ffffff;
+  /* 키보드 자리 입력판의 위 막대: 키보드 도구줄처럼 밝은 회색, 위는 굵은 선·아래는 얇은 선 */
+  --app-tool: #eceef2;
+  --app-tool-fg: #2e333b;
+  --app-tool-edge: #c5cad2;
+  --app-tool-line: #dcdfe5;
   color-scheme: light;
 }
 
@@ -43,6 +48,10 @@
     --app-chart-grid: #262a32;
     --app-bar: #2a2f38;
     --app-bar-fg: #eceef2;
+    --app-tool: #23272f;
+    --app-tool-fg: #e3e6eb;
+    --app-tool-edge: #3d434e;
+    --app-tool-line: #30353e;
     color-scheme: dark;
   }
 }
@@ -65,6 +74,10 @@
   --color-transfer: var(--app-transfer);
   --color-bar: var(--app-bar);
   --color-bar-fg: var(--app-bar-fg);
+  --color-tool: var(--app-tool);
+  --color-tool-fg: var(--app-tool-fg);
+  --color-tool-edge: var(--app-tool-edge);
+  --color-tool-line: var(--app-tool-line);
   --color-chart-expense: var(--app-chart-expense);
   --color-chart-income: var(--app-chart-income);
   --color-chart-grid: var(--app-chart-grid);

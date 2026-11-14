@@ -31,8 +31,9 @@ function useFreshGuard(ms = 350) {
 /** 휴대폰 키보드 자리에 뜨는 앱 입력판. 위 막대 + 내용. */
 function PanelFrame({ title, actions, onClose, children }: { title: ReactNode; actions?: ReactNode; onClose: () => void; children: ReactNode }) {
   return (
-    <div className="panel-in pb-safe absolute inset-x-0 bottom-0 z-10 flex flex-col bg-surface shadow-[0_-8px_24px_rgba(0,0,0,0.12)]" onClick={(e) => e.stopPropagation()}>
-      <div className="flex h-12 shrink-0 items-center gap-1 bg-bar pl-4 pr-1 text-bar-fg">
+    <div className="panel-in pb-safe absolute inset-x-0 bottom-0 z-10 flex flex-col bg-surface" onClick={(e) => e.stopPropagation()}>
+      {/* 키보드 도구줄처럼: 위 굵은 선으로 화면과 나누고, 아래 얇은 선으로 입력판과 나눈다 */}
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-t-2 border-b-tool-line border-t-tool-edge bg-tool pl-4 pr-1 text-tool-fg">
         <div className="min-w-0 flex-1 truncate text-[15px] font-semibold">{title}</div>
         {actions}
         <button type="button" aria-label="입력판 닫기" onClick={onClose} className="press flex size-11 items-center justify-center rounded-full">
@@ -58,15 +59,15 @@ function MemberSwitch({ members, value, onToggle }: { members: Member[]; value: 
         haptic(8);
         onToggle();
       }}
-      className="relative grid h-9 grid-cols-2 items-center rounded-full bg-bar-fg/15 p-0.5 text-[13px] font-semibold"
+      className="relative grid h-9 grid-cols-2 items-center rounded-full bg-tool-fg/8 p-0.5 text-[13px] font-semibold"
     >
       <span
-        className="absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-bar-fg shadow transition-transform duration-200 ease-out"
+        className="absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-surface shadow-sm ring-1 ring-tool-line transition-transform duration-200 ease-out"
         style={{ transform: at === 1 ? 'translateX(100%)' : 'translateX(0)' }}
         aria-hidden
       />
       {pair.map((m, i) => (
-        <span key={m.id} className={`relative z-10 flex items-center justify-center gap-0.5 px-2.5 transition-colors ${i === at ? 'text-bar' : 'text-bar-fg/70'}`}>
+        <span key={m.id} className={`relative z-10 flex items-center justify-center gap-0.5 px-2.5 transition-colors ${i === at ? 'text-fg' : 'text-tool-fg/55'}`}>
           <span aria-hidden>{m.emoji}</span>
           {m.display_name}
         </span>
@@ -83,7 +84,7 @@ function MultiToggle({ on, disabled, onClick }: { on: boolean; disabled?: boolea
       aria-pressed={on}
       aria-label="다중선택"
       onClick={onClick}
-      className={`press mr-1 h-8 rounded-full px-3 text-sm font-semibold transition-colors ${on ? 'bg-brand text-brand-fg' : 'bg-bar-fg/15 text-bar-fg'} ${disabled ? 'opacity-40' : ''}`}
+      className={`press mr-1 h-8 rounded-full px-3 text-sm font-semibold transition-colors ${on ? 'bg-brand text-brand-fg' : 'bg-surface text-tool-fg ring-1 ring-tool-line'} ${disabled ? 'opacity-40' : ''}`}
     >
       다중선택
     </button>
