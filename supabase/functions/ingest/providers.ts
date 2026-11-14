@@ -12,6 +12,10 @@ export interface ExtractInput {
   system: string;
   instruction: string;
   image?: { mime: string; b64: string };
+  /** 사진 여러 장(카드 앞·뒷면 등). image 와 함께 쓰면 image 가 먼저. */
+  images?: { mime: string; b64: string }[];
+  /** 결과 JSON 스키마. 없으면 내역 추출 스키마. */
+  schema?: Record<string, unknown>;
   /** 생각(추론) 깊이. 옮겨 적기는 낮아도 충분하고, 출력 토큰(=비용)이 크게 준다. */
   effort?: Effort;
 }
@@ -51,6 +55,16 @@ export class ExtractError extends Error {
   }
 }
 
+const imagesOf = (input: ExtractInput) => [...(input.image ? [input.image] : []), ...(input.images ?? [])];
+
+/** 스키마를 정해 주고 JSON 을 그대로 받는다(카드 읽기 등). */
+export async function generate(provider: Provider, model: string, input: ExtractInput & { schema: Record<string, unknown> }) {
+  const run = provider === 'anthropic' ? anthropic : provider === 'gemini' ? gemini : openai;
+  const { json, usage } = await run(model, { ...input, schema: toAnyOfNullable(input.schema) as Record<string, unknown> });
+  const price = PRICES[model];
+  return { json, usage, cost_usd: price ? (usage.input_tokens * price[0] + usage.output_tokens * price[1]) / 1_000_000 : null };
+}
+
 export async function extract(provider: Provider, model: string, input: ExtractInput): Promise<ExtractOutput> {
   const started = Date.now();
   const run = provider === 'anthropic' ? anthropic : provider === 'gemini' ? gemini : openai;
@@ -87,10 +101,10 @@ let anthropicClient: Anthropic | null = null;
 async function anthropic(model: string, input: ExtractInput) {
   anthropicClient ??= new Anthropic({ apiKey: key('ANTHROPIC_API_KEY'), maxRetries: 2 });
   const content: Anthropic.ContentBlockParam[] = [];
-  if (input.image) {
+  for (const img of imagesOf(input)) {
     content.push({
       type: 'image',
-      source: { type: 'base64', media_type: input.image.mime as 'image/jpeg', data: input.image.b64 },
+      source: { type: 'base64', media_type: img.mime as 'image/jpeg', data: img.b64 },
     });
   }
   content.push({ type: 'text', text: input.instruction });
@@ -102,7 +116,7 @@ async function anthropic(model: string, input: ExtractInput) {
       system: input.system,
       messages: [{ role: 'user' as const, content }],
       // 옮겨 적기는 깊이 생각할 일이 아니라서 effort 를 낮춘다.
-      output_config: { effort: (input.effort === 'minimal' ? 'low' : (input.effort ?? 'low')) as 'low' | 'medium' | 'high', format: { type: 'json_schema' as const, schema: SCHEMA } },
+      output_config: { effort: (input.effort === 'minimal' ? 'low' : (input.effort ?? 'low')) as 'low' | 'medium' | 'high', format: { type: 'json_schema' as const, schema: input.schema ?? SCHEMA } },
     };
     // Sonnet·Opus 는 안전 분류기가 드물게 거절할 때 서버가 다른 모델로 이어서 처리하게 한다(Haiku 는 해당 없음).
     const response = /^claude-(sonnet|opus)-5-5/.test(model)
@@ -132,7 +146,7 @@ async function anthropic(model: string, input: ExtractInput) {
 // ── Gemini ────────────────────────────────────────────────────────────────
 async function gemini(model: string, input: ExtractInput) {
   const parts: unknown[] = [];
-  if (input.image) parts.push({ inlineData: { mimeType: input.image.mime, data: input.image.b64 } });
+  for (const img of imagesOf(input)) parts.push({ inlineData: { mimeType: img.mime, data: img.b64 } });
   parts.push({ text: input.instruction });
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST',
@@ -142,7 +156,7 @@ async function gemini(model: string, input: ExtractInput) {
       contents: [{ role: 'user', parts }],
       generationConfig: {
         responseMimeType: 'application/json',
-        responseJsonSchema: SCHEMA,
+        responseJsonSchema: input.schema ?? SCHEMA,
         temperature: 0,
         // Gemini 3 계열: 생각 깊이(minimal/low/medium/high). 정하지 않으면 모델 기본값.
         ...(input.effort ? { thinkingConfig: { thinkingLevel: input.effort } } : {}),
@@ -162,7 +176,7 @@ async function gemini(model: string, input: ExtractInput) {
 // ── OpenAI ────────────────────────────────────────────────────────────────
 async function openai(model: string, input: ExtractInput) {
   const content: unknown[] = [];
-  if (input.image) content.push({ type: 'input_image', image_url: `data:${input.image.mime};base64,${input.image.b64}` });
+  for (const img of imagesOf(input)) content.push({ type: 'input_image', image_url: `data:${img.mime};base64,${img.b64}` });
   content.push({ type: 'input_text', text: input.instruction });
   const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -172,7 +186,7 @@ async function openai(model: string, input: ExtractInput) {
       instructions: input.system,
       input: [{ role: 'user', content }],
       reasoning: { effort: input.effort ?? 'low' },
-      text: { format: { type: 'json_schema', name: 'extraction', strict: true, schema: SCHEMA } },
+      text: { format: { type: 'json_schema', name: 'extraction', strict: true, schema: input.schema ?? SCHEMA } },
     }),
   });
   const body = await res.json().catch(() => ({}));

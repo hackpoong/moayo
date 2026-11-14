@@ -104,6 +104,8 @@ export interface PaymentMethod extends SyncedRow {
   /** 카드 대금이 빠져나가는 계좌(자산 id). */
   linked_account_id?: Uuid | null;
   memo?: string | null;
+  /** 카드번호·유효기간·CVC 암호문(가족 금고 비밀번호로만 풀린다). */
+  secret?: { v: number; iv: string; ct: string } | null;
 }
 
 export type CategoryKind = 'expense' | 'income';

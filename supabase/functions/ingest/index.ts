@@ -5,6 +5,9 @@
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.119.0';
 import {
   buildSystemPrompt,
+  CARD_SCHEMA,
+  CARD_SYSTEM_PROMPT,
+  coerceScannedCard,
   extractionIssues,
   maskSensitive,
   matchCandidates,
@@ -23,7 +26,7 @@ import {
   type TransactionSource,
   type TransferRule,
 } from '../_shared/core/index.ts';
-import { extract, ExtractError, type Effort, type ExtractOutput, type Provider } from './providers.ts';
+import { extract, ExtractError, generate, type Effort, type ExtractOutput, type Provider } from './providers.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -139,6 +142,7 @@ Deno.serve(async (req) => {
   } catch {
     return json(req, 400, { error: '요청 형식이 잘못되었습니다.' });
   }
+  if ((body as { mode?: string }).mode === 'card') return handleCard(req, admin, body as unknown as CardBody, userId);
   if (!body.household_id || !SOURCES.includes(body.source)) return json(req, 400, { error: 'household_id 와 source 가 필요합니다.' });
   if (!body.text?.trim() && !body.image_path) return json(req, 400, { error: '문구나 이미지가 필요합니다.' });
   if (body.text && body.text.length > 20000) return json(req, 400, { error: '문구가 너무 깁니다.' });
@@ -164,6 +168,43 @@ Deno.serve(async (req) => {
     return json(req, e instanceof ExtractError && e.retryable ? 503 : 500, { error: message });
   }
 });
+
+// ── 카드 사진 읽기 ────────────────────────────────────────────────────────
+// 카드 사진은 어디에도 저장하지 않는다(storage·raw_inputs·로그 모두). 읽은 번호는 앱이 기기에서 암호화한다.
+interface CardBody {
+  household_id: string;
+  images: { mime: string; b64: string }[];
+}
+
+async function handleCard(req: Request, admin: SupabaseClient, body: CardBody, userId: string): Promise<Response> {
+  const images = Array.isArray(body.images) ? body.images.slice(0, 2) : [];
+  if (!body.household_id || images.length === 0) return json(req, 400, { error: '카드 사진이 필요합니다.' });
+  if (images.some((i) => !/^image\/(jpeg|png|webp)$/.test(i?.mime ?? '') || typeof i.b64 !== 'string' || i.b64.length > MAX_IMAGE_BYTES * 1.4)) {
+    return json(req, 400, { error: '사진 형식이 맞지 않거나 너무 큽니다.' });
+  }
+  const { data: member } = await admin
+    .from('members')
+    .select('id')
+    .eq('household_id', body.household_id)
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (!member) return json(req, 403, { error: '이 가족의 구성원이 아닙니다.' });
+  try {
+    const out = await generate(ACCURATE_MODEL ? ACCURATE_PROVIDER : DEFAULT_PROVIDER, ACCURATE_MODEL ?? DEFAULT_MODEL, {
+      system: CARD_SYSTEM_PROMPT,
+      instruction: images.length > 1 ? '카드 앞면과 뒷면 사진입니다. 칸을 채워 주세요.' : '카드 사진입니다. 칸을 채워 주세요.',
+      images,
+      schema: CARD_SCHEMA as unknown as Record<string, unknown>,
+      effort: 'low',
+    });
+    return json(req, 200, { card: coerceScannedCard(out.json), cost_usd: out.cost_usd });
+  } catch (e) {
+    // 오류 문장에도 카드 내용이 섞이지 않게 종류만 남긴다.
+    console.error('card read failed', e instanceof ExtractError ? 'extract' : 'other');
+    return json(req, e instanceof ExtractError && e.retryable ? 503 : 500, { error: e instanceof ExtractError ? e.message : '카드를 읽지 못했습니다.' });
+  }
+}
 
 /** 7일 넘은 원본 이미지를 한 번에 50개까지 지운다(storage 는 SQL 로 지울 수 없어 API 로). */
 async function cleanupOldInputs(admin: SupabaseClient) {

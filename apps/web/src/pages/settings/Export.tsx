@@ -44,7 +44,8 @@ export function ExportPage() {
           exported_at: new Date().toISOString(),
           household: { id: household.householdId, name: household.householdName },
           transactions: data.transactions,
-          payment_methods: data.paymentMethods,
+          // 카드 암호문은 백업 파일에 넣지 않는다.
+          payment_methods: data.paymentMethods.map((p) => ({ ...p, secret: undefined })),
           categories: data.categories,
           tags: data.tags,
           transfer_rules: data.transferRules,

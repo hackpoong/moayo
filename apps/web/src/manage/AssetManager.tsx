@@ -10,6 +10,9 @@ import {
   startDayOf,
   todayKst,
   toKstDate,
+  typicalStartDay,
+  luhnValid,
+  type ScannedCard,
   type PaymentMethod,
   type PaymentMethodType,
 } from '@moayo/core';
@@ -24,6 +27,10 @@ import { useData } from '../data/dataContext.ts';
 import { baseRow, useMutations } from '../data/mutations.ts';
 import { assetIcon, LINKABLE_TYPES } from '../lib/assets.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
+import { unlockedKey } from '../lib/vault.ts';
+import { seal, type CardSecret } from '../lib/vaultCrypto.ts';
+import { CardScan, CardSecretSection } from './CardFields.tsx';
+import { VaultSheet } from './VaultSheet.tsx';
 
 const CARD_TYPES: PaymentMethodType[] = ['credit_card', 'check_card', 'prepaid_card'];
 const NOTE: Partial<Record<PaymentMethodType, string>> = {
@@ -196,6 +203,14 @@ export function AssetEditor({
   const [aliases, setAliases] = useState((initial?.aliases ?? []).join(', '));
   const [startDay, setStartDay] = useState(initial?.billing ? startDayOf(initial.billing) : 1);
   const [payDay, setPayDay] = useState(initial?.billing?.payment_day ?? 14);
+  const [color, setColor] = useState<string | null>(initial?.color ?? null);
+  // 카드번호·유효기간·CVC: 새로 넣거나 고치는 중일 때만 평문으로 들고 있다(저장할 때 암호화).
+  const [draft, setDraft] = useState<CardSecret | null>(null);
+  const [askVault, setAskVault] = useState<((k: CryptoKey) => void) | null>(null);
+  // 카드 사진으로 AI 가 채운 칸(✨ 표시).
+  const [aiFilled, setAiFilled] = useState<Set<string>>(new Set());
+  const [startTouched, setStartTouched] = useState(!!initial?.billing);
+  const toast = useToast();
   const parsed = splitIconName(text);
   const billing = type === 'credit_card' ? billingFromDays(startDay, payDay) : null;
   const accounts = data.paymentMethods.filter((p) => p.type === 'bank_account' && !p.archived && p.id !== initial?.id);
@@ -205,8 +220,72 @@ export function AssetEditor({
     [billing?.closing_day, billing?.payment_day, initial, data.transactions], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  const submit = async (close: () => void) => {
+  /** 카드 사진으로 읽은 칸을 채운다. 확신이 낮으면 이름·그룹은 비워 두고 확인을 부탁한다. */
+  const applyScan = (card: ScannedCard) => {
+    const filled = new Set<string>();
+    const sure = card.confidence !== 'low';
+    if (sure && card.type) {
+      setType(card.type);
+      setPicking(false);
+      filled.add('그룹');
+    } else if (!type) {
+      setType('credit_card');
+      setPicking(false);
+    }
+    const name = card.product_name ?? card.issuer;
+    if (sure && name && !parsed.name) {
+      setText(joinIconName(card.emoji ?? '💳', name));
+      filled.add('이름');
+    }
+    if (card.color) setColor(card.color);
+    if (card.sms_aliases.length) {
+      const have = aliases.split(',').map((a) => a.trim()).filter(Boolean);
+      setAliases([...new Set([...have, ...card.sms_aliases])].join(', '));
+      filled.add('문자연결어');
+    }
+    if (card.number) {
+      setLast4(card.number.slice(-4));
+      filled.add('끝 4자리');
+      const dup = data.paymentMethods.find((p) => p.id !== initial?.id && !p.archived && p.last4 === card.number!.slice(-4));
+      if (dup) toast({ message: `끝자리가 같은 '${dup.name}'이(가) 이미 있어요`, tone: 'error' });
+    }
+    if (card.bank_hint) {
+      const bank = card.bank_hint.replace(/은행$/, '');
+      const acc = accounts.find((a) => a.name.includes(bank) || a.aliases.some((x) => x.includes(bank)));
+      if (acc && !linked) {
+        setLinked(acc.id);
+        filled.add('결제');
+      }
+    }
+    if (card.benefits && !memo.trim()) {
+      setMemo(`주요 혜택(추정)\n${card.benefits}`);
+      filled.add('메모');
+    }
+    if (card.number || card.expiry || card.cvc) setDraft({ number: card.number ?? '', expiry: card.expiry ?? '', cvc: card.cvc ?? '' });
+    setAiFilled(filled);
+    toast({
+      message: sure ? '카드를 읽었어요. ✨ 표시한 칸을 확인해 주세요' : '카드를 확실히 알아보지 못했어요. 칸을 확인해 주세요',
+      tone: sure ? undefined : 'error',
+    });
+  };
+
+  const draftFilled = !!draft && !!(draft.number || draft.expiry || draft.cvc);
+
+  const submit = async (close: () => void, key?: CryptoKey) => {
     if (!type || !parsed.name) return;
+    if (draft?.number && !luhnValid(draft.number) && !window.confirm('카드번호 검증이 맞지 않아요. 그대로 저장할까요?')) return;
+    // 카드 정보는 금고로 암호화해서 저장한다. 금고가 잠겨 있으면 먼저 연다.
+    let secret = initial?.secret ?? null;
+    if (draft) {
+      if (draftFilled) {
+        const k = key ?? unlockedKey(household.householdId);
+        if (!k) {
+          setAskVault(() => (k2: CryptoKey) => void submit(close, k2));
+          return;
+        }
+        secret = await seal(k, { number: draft.number || null, expiry: draft.expiry || null, cvc: draft.cvc || null });
+      } else secret = null;
+    }
     const row: PaymentMethod = {
       ...(initial ?? { ...baseRow(household.householdId), sort: data.paymentMethods.length, color: null, issuer: null, archived: false }),
       type,
@@ -218,7 +297,10 @@ export function AssetEditor({
       memo: memo.trim() || null,
       aliases: aliases.split(',').map((a) => a.trim()).filter(Boolean).slice(0, 20),
       billing,
+      color,
+      secret: type && CARD_TYPES.includes(type) ? secret : null,
     };
+    if (draft?.number && luhnValid(draft.number)) row.last4 = draft.number.slice(-4);
     const saved = await save('payment_methods', row);
     onSaved?.(saved);
     close();
@@ -275,7 +357,8 @@ export function AssetEditor({
         )}
       >
         <div className="px-5 pb-6 pt-1">
-          <Line label="그룹" onClick={() => setPicking(true)}>
+          {!type || CARD_TYPES.includes(type) ? <CardScan householdId={household.householdId} onRead={applyScan} /> : null}
+          <Line label="그룹" ai={aiFilled.has('그룹')} onClick={() => setPicking(true)}>
             <span className={type ? '' : 'text-muted/50'}>{type ? PAYMENT_METHOD_TYPE_LABEL[type] : '고르세요'}</span>
           </Line>
           {people.length > 1 ? (
@@ -295,7 +378,7 @@ export function AssetEditor({
               </div>
             </Line>
           ) : null}
-          <Line label="이름">
+          <Line label="이름" ai={aiFilled.has('이름')}>
             <input
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -306,7 +389,7 @@ export function AssetEditor({
             />
           </Line>
           {type && LINKABLE_TYPES.includes(type) ? (
-            <Line label="결제">
+            <Line label="결제" ai={aiFilled.has('결제')}>
               <select value={linked ?? ''} onChange={(e) => setLinked(e.target.value || null)} aria-label="결제 계좌" className="w-full bg-transparent text-base outline-none">
                 <option value="">연결 안 함</option>
                 {accounts.map((a) => (
@@ -318,11 +401,14 @@ export function AssetEditor({
             </Line>
           ) : null}
           {type && CARD_TYPES.includes(type) ? (
-            <Line label="끝 4자리">
+            <Line label="끝 4자리" ai={aiFilled.has('끝 4자리')}>
               <input value={last4} onChange={(e) => setLast4(e.target.value.replace(/[^0-9*]/g, '').slice(0, 4))} inputMode="numeric" aria-label="카드 끝 4자리" placeholder="문자에 찍히는 끝자리" className="w-full bg-transparent text-base outline-none placeholder:text-muted/40" />
             </Line>
           ) : null}
-          <Line label="메모">
+          {type && CARD_TYPES.includes(type) ? (
+            <CardSecretSection householdId={household.householdId} sealed={initial?.secret} last4={last4} draft={draft} onDraft={setDraft} />
+          ) : null}
+          <Line label="메모" ai={aiFilled.has('메모')}>
             <textarea
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
@@ -335,7 +421,7 @@ export function AssetEditor({
           </Line>
 
           <div className="-mx-5 my-3 h-2 bg-bg" />
-          <Line label="문자연결어">
+          <Line label="문자연결어" ai={aiFilled.has('문자연결어')}>
             <input
               value={aliases}
               onChange={(e) => setAliases(e.target.value)}
@@ -349,7 +435,7 @@ export function AssetEditor({
             <>
               <div className="-mx-5 my-3 h-2 bg-bg" />
               <Line label="정산일">
-                <select value={startDay} onChange={(e) => setStartDay(Number(e.target.value))} aria-label="정산일" className="w-full bg-transparent text-base outline-none">
+                <select value={startDay} onChange={(e) => (setStartDay(Number(e.target.value)), setStartTouched(true))} aria-label="정산일" className="w-full bg-transparent text-base outline-none">
                   {days.map((d) => (
                     <option key={d} value={d}>
                       {d} 일
@@ -358,7 +444,14 @@ export function AssetEditor({
                 </select>
               </Line>
               <Line label="결제일">
-                <select value={payDay} onChange={(e) => setPayDay(Number(e.target.value))} aria-label="결제일" className="w-full bg-transparent text-base outline-none">
+                <select
+                  value={payDay}
+                  onChange={(e) => {
+                    const d = Number(e.target.value);
+                    setPayDay(d);
+                    // 정산일을 직접 고르지 않았으면 결제일로 흔한 이용기간을 채운다.
+                    if (!startTouched) setStartDay(typicalStartDay(d));
+                  }} aria-label="결제일" className="w-full bg-transparent text-base outline-none">
                   {days.map((d) => (
                     <option key={d} value={d}>
                       {d} 일
@@ -382,6 +475,18 @@ export function AssetEditor({
           {type && NOTE[type] ? <p className="mt-4 text-sm font-normal leading-relaxed text-muted">{NOTE[type]}</p> : null}
         </div>
       </Sheet>
+      {askVault ? (
+        <VaultSheet
+          householdId={household.householdId}
+          reason="카드 정보를 저장하려면 금고를 열어 주세요."
+          onKey={(k) => {
+            const next = askVault;
+            setAskVault(null);
+            next(k);
+          }}
+          onClose={() => setAskVault(null)}
+        />
+      ) : null}
       {picking ? (
         <Sheet title="자산그룹" onClose={() => (type ? setPicking(false) : onClose())}>
           {(close) => (
@@ -410,10 +515,17 @@ export function AssetEditor({
   );
 }
 
-function Line({ label, onClick, children }: { label: string; onClick?: () => void; children: ReactNode }) {
+function Line({ label, onClick, children, ai }: { label: string; onClick?: () => void; children: ReactNode; ai?: boolean }) {
   const inner = (
     <>
-      <span className="w-20 shrink-0 text-sm font-normal text-muted">{label}</span>
+      <span className="w-20 shrink-0 text-sm font-normal text-muted">
+        {label}
+        {ai ? (
+          <span className="ml-0.5 text-brand" title="카드 사진으로 채움" aria-label="(사진으로 채움)">
+            ✨
+          </span>
+        ) : null}
+      </span>
       <div className="flex min-h-12 min-w-0 flex-1 items-center border-b border-line">{children}</div>
     </>
   );

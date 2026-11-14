@@ -258,5 +258,16 @@ select test.ok(test.affected(format($$insert into public.transactions (household
 select test.ok(test.throws(format($$insert into public.transactions (household_id, kind, amount, occurred_at, cash_date, attachments)
   values (%L, 'expense', 900, now(), current_date, (select jsonb_agg(jsonb_build_object('id', g)) from generate_series(1, 9) g))$$, :'ha')), '사진 9장은 거부');
 
+-- ── 카드 금고 ────────────────────────────────────────────────────────────
+select test.ok(test.affected(format($$insert into public.household_vault (household_id, salt, iterations, verifier)
+  values (%L, 'c2FsdHNhbHRzYWx0c2FsdA==', 600000, '{"iv":"a","ct":"b"}')$$, :'ha')) = 1, '금고 만들기');
+select test.ok(test.throws(format($$insert into public.household_vault (household_id, salt, iterations, verifier)
+  values (%L, 'c2FsdHNhbHRzYWx0c2FsdA==', 600000, '{"iv":"a","ct":"b"}')$$, :'hc')), '다른 가족 금고는 못 만듦');
+select test.ok(test.affected(format($$update public.payment_methods set secret = '{"v":1,"iv":"a","ct":"b"}' where household_id = %L$$, :'ha')) >= 1, '자산에 암호문 저장');
+select test.ok(test.throws(format($$update public.payment_methods set secret = '{"number":"4111"}' where household_id = %L$$, :'ha')), '암호문 모양이 아니면 거부');
+select test.login(:'carol');
+select test.ok((select count(*) from public.household_vault) = 0, '캐럴: 다른 가족 금고 안 보임');
+select test.login(:'alice');
+
 reset role;
 \echo 'ALL DB TESTS PASSED'
