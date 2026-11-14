@@ -2,7 +2,10 @@ import type { MemberRole } from '@moayo/core';
 import { ArrowLeftRight, Check, ChevronRight, Copy, CreditCard, Download, Hash, LayoutGrid, LogOut, Share2, Sparkles, UserMinus, type LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
 import { SyncBadge } from '../components/SyncBadge.tsx';
+import { MemberBadge } from '../components/MemberBadge.tsx';
+import { useData, useDataContext } from '../data/dataContext.ts';
 import { deleteLocalDb } from '../data/localDb.ts';
+import { MEMBER_COLORS, memberColor } from '../lib/members.ts';
 import { AiUsagePreview } from './settings/AiUsage.tsx';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button, Card, ErrorNote, Field } from '../components/ui.tsx';
@@ -96,10 +99,21 @@ export function More() {
     void run(() => db().rpc('remove_member', { p_member_id: member.id }));
   };
 
+  const { engine } = useDataContext();
+
   const saveMyName = async (name: string) => {
     if (await run(() => db().from('members').update({ display_name: name }).eq('id', household.memberId))) {
       await refresh();
     }
+  };
+
+  // 내 색: 서버에 바로 쓰고, 동기화로 다른 기기에도 퍼진다.
+  const saveMyColor = (color: string) => {
+    void run(async () => {
+      const r = await db().from('members').update({ color }).eq('id', household.memberId);
+      engine.syncNow();
+      return r;
+    });
   };
 
   const copy = async (code: string) => {
@@ -228,6 +242,7 @@ export function More() {
       </Card>
 
       <NameForm key={household.memberId} current={household.displayName} busy={busy} onSave={saveMyName} />
+      <MyColor memberId={household.memberId} onPick={saveMyColor} />
 
       <Card>
         <p className="truncate text-sm text-muted">{session.user.email}</p>
@@ -260,6 +275,36 @@ function NameForm({ current, busy, onSave }: { current: string; busy: boolean; o
           이름 저장
         </Button>
       </form>
+    </Card>
+  );
+}
+
+/** 내 색: 내역·입력 화면에서 누가 썼는지 보여 주는 색. */
+function MyColor({ memberId, onPick }: { memberId: string; onPick: (color: string) => void }) {
+  const data = useData();
+  const me = data.byId.member.get(memberId);
+  const current = me ? memberColor(me, data.members) : null;
+  return (
+    <Card>
+      <p className="text-sm font-medium text-muted">내 색 (누가 썼는지 표시)</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {MEMBER_COLORS.map((c) => (
+          <button
+            key={c}
+            type="button"
+            aria-label={`색 ${c}`}
+            aria-pressed={c === current}
+            onClick={() => onPick(c)}
+            className={`press size-9 rounded-full ${c === current ? 'ring-2 ring-fg ring-offset-2 ring-offset-surface' : ''}`}
+            style={{ backgroundColor: c }}
+          />
+        ))}
+      </div>
+      {me ? (
+        <p className="mt-3 text-sm">
+          미리 보기: <MemberBadge member={me} size="md" />
+        </p>
+      ) : null}
     </Card>
   );
 }

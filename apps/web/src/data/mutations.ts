@@ -12,20 +12,31 @@ export function newId(): string {
 }
 
 export function useMutations() {
-  const { db, engine, householdId } = useDataContext();
+  const { db, engine, householdId, applyOptimistic, settleOptimistic } = useDataContext();
 
+  /**
+   * 저장. 화면에는 바로 보이고(같은 프레임), 기기 DB 기록과 서버 전송은 뒤에서 이어진다.
+   * 돌려주는 Promise 는 기기 DB 기록이 끝날 때 풀린다(기다릴 필요가 없으면 기다리지 않아도 된다).
+   */
   const save = useCallback(
     async <T extends PushTable>(table: T, row: RowByTable[T] & Editable) => {
       const now = new Date().toISOString();
       const stamped = { ...row, household_id: householdId, updated_at: now } as RowByTable[T];
-      await db.transaction('rw', [db.rows(table), db.outbox], async () => {
-        await db.rows(table).put(stamped as never);
-        await db.outbox.put({ table, id: row.id, household_id: householdId, queued_at: Date.now(), attempts: 0, last_error: null });
-      });
+      applyOptimistic(table, stamped);
+      try {
+        await db.transaction('rw', [db.rows(table), db.outbox], async () => {
+          await db.rows(table).put(stamped as never);
+          await db.outbox.put({ table, id: row.id, household_id: householdId, queued_at: Date.now(), attempts: 0, last_error: null });
+        });
+      } catch (e) {
+        // 기기 DB 에 못 썼으면 화면에 먼저 보여 준 것도 되돌린다.
+        settleOptimistic(table, stamped.id, now);
+        throw e;
+      }
       engine.schedulePush();
       return stamped;
     },
-    [db, engine, householdId],
+    [db, engine, householdId, applyOptimistic, settleOptimistic],
   );
 
   /** 지우기는 deleted_at 만 찍는다(다른 기기에 전파되고, 되돌릴 수 있다). */

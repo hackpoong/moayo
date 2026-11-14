@@ -9,7 +9,7 @@ import { guessPaymentType } from '../lib/paymentType.ts';
 const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
 /** 입력 화면 안에서 바로 결제수단을 추가한다. 신용카드는 결제일만 물어본다(이용기간은 전월 1일~말일로). */
-export function NewPaymentMethod({ onCreated, onCancel }: { onCreated: (pm: PaymentMethod) => void; onCancel: () => void }) {
+export function NewPaymentMethod({ onCreated, onCancel, ownerMemberId = null }: { onCreated: (pm: PaymentMethod) => void; onCancel: () => void; ownerMemberId?: string | null }) {
   const household = useCurrentHousehold();
   const data = useData();
   const { save } = useMutations();
@@ -27,19 +27,21 @@ export function NewPaymentMethod({ onCreated, onCancel }: { onCreated: (pm: Paym
   const create = async () => {
     if (!name.trim()) return;
     setBusy(true);
-    const pm = await save('payment_methods', {
+    const pm = { ...{
       ...baseRow(household.householdId),
       name: name.trim().slice(0, 30),
       type,
       issuer: null,
       last4: null,
-      owner_member_id: null,
+      owner_member_id: ownerMemberId,
       aliases: [],
       billing: type === 'credit_card' ? { closing_day: 31, payment_day: paymentDay, payment_month_offset: 1 } : null,
       color: null,
       sort: data.paymentMethods.length,
       archived: false,
-    });
+    } } as PaymentMethod;
+    // 화면에는 바로 쓰고 기록은 뒤에서.
+    void save('payment_methods', pm);
     onCreated(pm);
   };
 

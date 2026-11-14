@@ -1,6 +1,6 @@
 import type { Category, Member, PaymentMethod, Tag, Transaction, TransferRule } from '@moayo/core';
 import { createContext, useContext } from 'react';
-import type { LocalDb } from './localDb.ts';
+import type { LocalDb, PushTable, RowByTable } from './localDb.ts';
 import type { SyncEngine, SyncStatus } from './sync.ts';
 
 export interface HouseholdData {
@@ -27,6 +27,9 @@ export interface DataContextValue {
   /** 기기 DB 를 처음 읽기 전이면 null. */
   data: HouseholdData | null;
   status: SyncStatus;
+  /** 저장 즉시 화면에 보이게(기기 DB 기록은 뒤따라온다). */
+  applyOptimistic: <T extends PushTable>(table: T, row: RowByTable[T]) => void;
+  settleOptimistic: <T extends PushTable>(table: T, id: string, updatedAt: string) => void;
 }
 
 export const DataContext = createContext<DataContextValue | null>(null);

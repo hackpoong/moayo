@@ -1,4 +1,5 @@
 import { CloudOff, RefreshCw, TriangleAlert } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useSyncStatus } from '../data/dataContext.ts';
 import { useMutations } from '../data/mutations.ts';
 
@@ -6,6 +7,17 @@ import { useMutations } from '../data/mutations.ts';
 export function SyncBadge({ always = false }: { always?: boolean }) {
   const status = useSyncStatus();
   const { retryFailed } = useMutations();
+  // 보통 저장은 1초 안에 끝난다. 매번 '저장 중'이 깜빡이면 느려 보이므로 2.5초 넘게 밀릴 때만 보인다.
+  const pending = status.pendingCount > 0;
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!pending) {
+      const t = window.setTimeout(() => setSlow(false), 0);
+      return () => window.clearTimeout(t);
+    }
+    const t = window.setTimeout(() => setSlow(true), 2500);
+    return () => window.clearTimeout(t);
+  }, [pending]);
 
   if (status.state === 'offline') {
     return (
@@ -22,7 +34,7 @@ export function SyncBadge({ always = false }: { always?: boolean }) {
       </button>
     );
   }
-  if (status.pendingCount > 0 || (!status.initialized && status.state === 'syncing')) {
+  if ((pending && slow) || (!status.initialized && status.state === 'syncing')) {
     return (
       <Pill tone="muted" icon={<RefreshCw className="size-3.5 animate-spin" aria-hidden />}>
         {status.initialized ? '저장 중' : '가계부 불러오는 중'}

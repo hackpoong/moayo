@@ -6,12 +6,13 @@ import { Sheet } from '../../components/Sheet.tsx';
 import { Button } from '../../components/ui.tsx';
 import { useData } from '../../data/dataContext.ts';
 import { baseRow, useMutations } from '../../data/mutations.ts';
+import { CATEGORY_COLORS, CATEGORY_ICONS } from '../../lib/categoryStyle.ts';
 import { useCurrentHousehold } from '../../lib/householdContext.ts';
 import { Labeled, MoveButtons, SettingsHeader } from './common.tsx';
 import { inputClass, swapSort } from './util.ts';
 
-const COLORS = ['#f97316', '#a16207', '#0ea5e9', '#6366f1', '#8b5cf6', '#14b8a6', '#ef4444', '#22c55e', '#ec4899', '#d946ef', '#f59e0b', '#e11d48', '#64748b', '#94a3b8'];
-const ICONS = ['🍚', '☕', '🍺', '🛒', '🧻', '🏠', '💡', '📱', '🚗', '⛽', '🚌', '💊', '🏥', '📚', '✏️', '🧸', '👶', '👕', '💇', '🎬', '🎮', '✈️', '🎁', '💐', '🐶', '🏦', '🛡️', '💼', '💰', '🧧', '📈', '📦'];
+const COLORS = CATEGORY_COLORS;
+const ICONS = CATEGORY_ICONS;
 
 export function CategoriesPage() {
   const data = useData();

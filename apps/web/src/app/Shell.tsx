@@ -2,6 +2,7 @@ import { CalendarDays, ChartPie, Ellipsis, House, ImagePlus, List, Plus, type Lu
 import { useCallback, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { SyncBadge } from '../components/SyncBadge.tsx';
+import { ToastProvider } from '../components/Toast.tsx';
 import { Logo } from '../components/ui.tsx';
 import { DataProvider } from '../data/DataProvider.tsx';
 import { EditorContext, type EditorRequest } from '../editor/editorContext.ts';
@@ -31,7 +32,9 @@ export function Shell() {
   const household = useCurrentHousehold();
   return (
     <DataProvider key={household.householdId} userId={session.user.id} householdId={household.householdId}>
-      <ShellLayout />
+      <ToastProvider>
+        <ShellLayout />
+      </ToastProvider>
     </DataProvider>
   );
 }

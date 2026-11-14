@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { suggestFromTitle } from './suggest.ts';
+import { suggestFromTitle, titleSuggestions } from './suggest.ts';
 import { makeTx } from './testkit.ts';
 import type { Category } from './types.ts';
 
@@ -33,5 +33,35 @@ describe('suggestFromTitle', () => {
   it('지출 기록은 수입 추천에 쓰지 않는다', () => {
     const history = [makeTx({ kind: 'expense', merchant: '회사', splits: [{ category_id: 'food', amount: 1 }] })];
     expect(suggestFromTitle('회사', 'income', cats, history).categoryId).toBeNull();
+  });
+});
+
+describe('titleSuggestions', () => {
+  const h = (merchant: string, cat: string | null, date: string, pm: string | null = null) =>
+    makeTx({ merchant, occurred_at: `${date}T03:00:00Z`, splits: cat ? [{ category_id: cat, amount: 1 }] : [], payment_method_id: pm });
+  // 최근 것이 앞
+  const history = [
+    h('맥도날드 세종점', 'food', '2026-11-10', 'card'),
+    h('스타벅스', 'cafe', '2026-11-09'),
+    h('맥도날드 세종점', 'cafe', '2026-11-01'),
+    h('메가커피', 'cafe', '2026-10-30'),
+    h('맥주집', 'food', '2026-10-01'),
+    h('롯데리아 맥도', 'food', '2026-09-01'),
+  ];
+
+  it('빈 입력이면 추천 없음', () => {
+    expect(titleSuggestions('', 'expense', history)).toEqual([]);
+    expect(titleSuggestions(' ', 'expense', history)).toEqual([]);
+  });
+
+  it('한 글자부터, 시작 일치 > 자주 > 최근, 마지막 분류·결제수단 함께', () => {
+    const r = titleSuggestions('맥', 'expense', history);
+    expect(r.map((s) => s.title)).toEqual(['맥도날드 세종점', '맥주집', '롯데리아 맥도']);
+    expect(r[0]).toMatchObject({ categoryId: 'food', paymentMethodId: 'card', count: 2 });
+  });
+
+  it('최대 4개, 이미 다 친 제목은 빼기', () => {
+    expect(titleSuggestions('커피', 'expense', history).map((s) => s.title)).toEqual(['메가커피']);
+    expect(titleSuggestions('메가커피', 'expense', history)).toEqual([]);
   });
 });

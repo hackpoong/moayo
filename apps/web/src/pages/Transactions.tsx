@@ -165,7 +165,7 @@ export function Transactions() {
         </EmptyState>
       ) : (
         groups.map((g) => (
-          <section key={g.date} className="rounded-2xl bg-surface px-4 pb-1 pt-3">
+          <section key={g.date} className="cv-auto rounded-2xl bg-surface px-4 pb-1 pt-3">
             <header className="tabular flex items-baseline justify-between border-b border-line pb-2 text-sm">
               <span className="font-semibold">{dayLabel(g.date)}</span>
               <span className="text-muted">{g.expense ? `-${formatWon(g.expense)}` : ''}</span>

@@ -75,7 +75,7 @@ export function Home() {
                 </button>
               </EmptyState>
             ) : (
-              <p className="py-6 text-center text-sm text-muted">불러오는 중…</p>
+              <RowSkeleton />
             )}
           </div>
         ) : (
@@ -86,6 +86,24 @@ export function Home() {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+/** 처음 불러올 때 회색 빈 줄(무엇이 올지 미리 보여 주면 덜 기다리는 느낌). */
+function RowSkeleton() {
+  return (
+    <div className="space-y-3 py-2" aria-busy="true" aria-label="불러오는 중">
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="flex animate-pulse items-center gap-3">
+          <span className="size-10 rounded-full bg-surface-2" />
+          <span className="flex-1 space-y-1.5">
+            <span className="block h-3.5 w-1/2 rounded bg-surface-2" />
+            <span className="block h-3 w-1/3 rounded bg-surface-2" />
+          </span>
+          <span className="h-4 w-16 rounded bg-surface-2" />
+        </div>
+      ))}
     </div>
   );
 }

@@ -21,7 +21,14 @@ import { SetupNeeded } from '../pages/SetupNeeded.tsx';
 import { Transactions } from '../pages/Transactions.tsx';
 import { Shell } from './Shell.tsx';
 
-const Stats = lazy(() => import('../pages/Stats.tsx').then((m) => ({ default: m.Stats })));
+const loadStats = () => import('../pages/Stats.tsx');
+const Stats = lazy(() => loadStats().then((m) => ({ default: m.Stats })));
+
+// 첫 화면이 뜬 뒤 한가할 때 통계 화면을 미리 받아 둔다(누르는 순간 바로 뜨게).
+if (typeof window !== 'undefined') {
+  const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 1500));
+  idle(() => void loadStats());
+}
 
 export function App() {
   if (!supabase) return <SetupNeeded />;

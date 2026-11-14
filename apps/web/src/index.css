@@ -168,6 +168,58 @@ body {
   animation: fade-out 180ms ease-in forwards;
 }
 
+@keyframes toast-in {
+  from {
+    transform: translateY(16px) scale(0.98);
+    opacity: 0;
+  }
+}
+.toast-in {
+  animation: toast-in 220ms var(--ease-out);
+}
+.toast-out {
+  animation: fade-out 180ms ease-in forwards;
+}
+
+/* 방금 저장한 줄: 미끄러져 들어오며 잠깐 강조 */
+@keyframes row-flash {
+  0% {
+    background-color: var(--app-brand-soft);
+    transform: translateY(-6px);
+    opacity: 0.4;
+  }
+  25% {
+    transform: none;
+    opacity: 1;
+  }
+  70% {
+    background-color: var(--app-brand-soft);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.row-flash {
+  animation: row-flash 1500ms var(--ease-out);
+  border-radius: 12px;
+}
+
+/* 앱 입력 패널 */
+@keyframes panel-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+.panel-in {
+  animation: panel-in 220ms var(--ease-out);
+}
+
+/* 화면 밖 긴 목록은 그리기를 미룬다 */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px;
+}
+
 /* 누르면 살짝 들어가는 느낌 */
 .press {
   transition:

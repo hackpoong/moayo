@@ -74,3 +74,50 @@ export function suggestFromTitle(
   }
   return { categoryId: null, paymentMethodId: exact?.paymentMethodId ?? similar?.paymentMethodId ?? null, reason: null };
 }
+
+export interface TitleSuggestion {
+  title: string;
+  categoryId: string | null;
+  paymentMethodId: string | null;
+  count: number;
+}
+
+type TitleHistoryRow = Pick<Transaction, 'merchant' | 'splits' | 'kind' | 'deleted_at' | 'payment_method_id' | 'occurred_at'>;
+
+/**
+ * 제목 추천: 한 글자 이상 쳤을 때, 예전 제목 중 그 글자를 포함하는 것을 자주·최근 순으로 최대 limit 개.
+ * 각 추천에는 그 제목에 마지막으로 쓴 분류·결제수단이 붙는다(고르면 함께 채움).
+ * history 는 최근 것이 앞에 오도록 정렬돼 있어야 한다.
+ */
+export function titleSuggestions(input: string, kind: Transaction['kind'], history: readonly TitleHistoryRow[], limit = 4): TitleSuggestion[] {
+  const q = normalizeMerchant(input);
+  if (!q) return [];
+  const byTitle = new Map<string, TitleSuggestion & { rank: number; startsWith: boolean }>();
+  let rank = 0;
+  for (const tx of history) {
+    if (tx.deleted_at || tx.kind !== kind || !tx.merchant) continue;
+    const key = normalizeMerchant(tx.merchant);
+    if (!key.includes(q)) continue;
+    rank += 1;
+    const hit = byTitle.get(key);
+    if (hit) {
+      hit.count += 1;
+      continue;
+    }
+    byTitle.set(key, {
+      title: tx.merchant,
+      categoryId: tx.splits.length === 1 ? tx.splits[0]!.category_id : null,
+      paymentMethodId: tx.payment_method_id,
+      count: 1,
+      rank,
+      startsWith: key.startsWith(q),
+    });
+    if (byTitle.size > 200) break;
+  }
+  // 정확히 같은 제목은 추천할 필요가 없다(이미 다 쳤다).
+  byTitle.delete(q);
+  return [...byTitle.values()]
+    .sort((a, b) => Number(b.startsWith) - Number(a.startsWith) || b.count - a.count || a.rank - b.rank)
+    .slice(0, limit)
+    .map(({ title, categoryId, paymentMethodId, count }) => ({ title, categoryId, paymentMethodId, count }));
+}

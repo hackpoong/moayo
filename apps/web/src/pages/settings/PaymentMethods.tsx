@@ -246,10 +246,10 @@ function PaymentMethodForm({ initial, nextSort, onClose }: { initial: PaymentMet
           <input value={aliases} onChange={(e) => setAliases(e.target.value)} className={inputClass} />
         </Labeled>
 
-        {data.members.filter((m) => !m.deleted_at).length > 1 ? (
-          <Labeled label="주로 쓰는 사람">
+        {data.members.filter((m) => !m.deleted_at).length > 0 ? (
+          <Labeled label="주인 (쓴 사람으로 기록됨)">
             <select value={ownerId ?? ''} onChange={(e) => setOwnerId(e.target.value || null)} className={inputClass}>
-              <option value="">같이 씀</option>
+              <option value="">같이 씀 (고를 때 보고 있던 사람)</option>
               {data.members
                 .filter((m) => !m.deleted_at)
                 .map((m) => (
