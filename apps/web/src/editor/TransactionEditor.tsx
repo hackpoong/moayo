@@ -1,5 +1,7 @@
 import {
   computeCashDate,
+  editAmount,
+  rebalance,
   evalAmountExpression,
   formatAmount,
   formatAmountExpression,
@@ -7,6 +9,7 @@ import {
   fromKst,
   hasOperator,
   matchTransferRule,
+  parseSpokenEntry,
   memberTransferRules,
   splitsAreValid,
   suggestFromTitle,
@@ -29,6 +32,7 @@ import { useToast } from '../components/toastContext.ts';
 import { Button } from '../components/ui.tsx';
 import { useData } from '../data/dataContext.ts';
 import { baseRow, newId, useMutations } from '../data/mutations.ts';
+import { assetIcon } from '../lib/assets.ts';
 import { flashRow, haptic } from '../lib/flash.ts';
 import { KIND_LABEL, shortDate, weekday } from '../lib/format.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
@@ -36,7 +40,9 @@ import { useOpenEditor, type EditorRequest } from './editorContext.ts';
 import { AmountPanel, AssetPanel, CategoryPanel, type PanelKind } from './InputPanel.tsx';
 import { NewPaymentMethod } from './NewPaymentMethod.tsx';
 import { QuickAddCategory } from './QuickAddCategory.tsx';
-import { SplitEditor } from './SplitEditor.tsx';
+import { VoiceButton } from './VoiceButton.tsx';
+
+type PayRow = { payment_method_id: string | null; member_id: string | null; amount: number };
 
 const INSTALLMENTS = [1, 2, 3, 4, 5, 6, 10, 12, 24];
 
@@ -71,7 +77,17 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   const [titleFocused, setTitleFocused] = useState(false);
   const [amountExpr, setAmountExpr] = useState(original ? String(original.amount) : '');
   const [splits, setSplits] = useState<Split[]>(original?.splits ?? []);
-  const [splitMode, setSplitMode] = useState((original?.splits.length ?? 0) > 1);
+  // 분류 다중선택: 분류 줄마다 금액. 직접 고친 줄 표시(나머지는 고치지 않은 줄이 나눠 가짐).
+  const [catMulti, setCatMulti] = useState((original?.splits.length ?? 0) > 1);
+  const [splitEdited, setSplitEdited] = useState<boolean[]>(() => (original?.splits ?? []).map(() => true));
+  // 자산 다중선택: 자산 줄마다 금액과 낸 사람.
+  const initialPays = original?.payments && original.payments.length > 1 ? original.payments.map(({ payment_method_id, member_id, amount }) => ({ payment_method_id, member_id, amount })) : [];
+  const [payMulti, setPayMulti] = useState(initialPays.length > 1);
+  const [pays, setPays] = useState<PayRow[]>(initialPays);
+  const [payEdited, setPayEdited] = useState<boolean[]>(() => initialPays.map(() => true));
+  // 숫자패드가 지금 채우는 곳: 전체 금액(null) 또는 분류·자산 줄 하나.
+  const [amountTarget, setAmountTarget] = useState<{ kind: 'split' | 'pay'; index: number } | null>(null);
+  const [rowExpr, setRowExpr] = useState('');
   const [categoryTouched, setCategoryTouched] = useState(!!original);
   const [paymentMethodId, setPaymentMethodId] = useState<string | null>(original ? original.payment_method_id : lastPaymentMethodId);
   const [pmTouched, setPmTouched] = useState(!!original);
@@ -116,8 +132,11 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   const category = categoryId ? data.byId.category.get(categoryId) : null;
 
   const finalSplits: Split[] =
-    kind === 'transfer' ? [] : splitMode ? splits.filter((s) => s.amount > 0) : categoryId ? [{ category_id: categoryId, amount }] : [];
-  const valid = amount > 0 && splitsAreValid(amount, finalSplits) && /^\d{4}-\d{2}-\d{2}$/.test(date);
+    kind === 'transfer' ? [] : catMulti ? splits.filter((s) => s.amount > 0) : categoryId ? [{ category_id: categoryId, amount }] : [];
+  const splitGap = catMulti && kind !== 'transfer' ? amount - splits.reduce((t, x) => t + x.amount, 0) : 0;
+  const payGap = payMulti ? amount - pays.reduce((t, x) => t + x.amount, 0) : 0;
+  const valid =
+    amount > 0 && splitGap === 0 && payGap === 0 && (!payMulti || pays.length > 0) && splitsAreValid(amount, finalSplits) && /^\d{4}-\d{2}-\d{2}$/.test(date);
 
   // 자산 입력판에서 보고 있는 사람: 직접 바꾼 사람 → 고른 자산의 주인 → 나 → 첫 구성원.
   const viewingMember: Member | null = pickViewingMember();
@@ -131,13 +150,86 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
     if (p) titleRef.current?.blur();
     setPanel(p);
   };
-  const afterAmount = () => openPanel(kind === 'transfer' ? 'asset' : splitMode ? null : 'category');
+  const afterAmount = () => openPanel(kind === 'transfer' ? 'asset' : 'category');
+
+  /** 전체 금액이 정해지면 다중선택 줄들의 금액을 다시 나눈다(직접 고친 줄은 그대로). */
+  const rebalanceAll = (total: number) => {
+    if (catMulti && splits.length) {
+      const next = rebalance(total, splits.map((x) => x.amount), splitEdited);
+      setSplits(splits.map((x, i) => ({ ...x, amount: next[i]! })));
+    }
+    if (payMulti && pays.length) {
+      const next = rebalance(total, pays.map((x) => x.amount), payEdited);
+      setPays(pays.map((x, i) => ({ ...x, amount: next[i]! })));
+    }
+  };
+
+  const toggleCatMulti = () => {
+    haptic(8);
+    if (catMulti) {
+      const first = splits[0];
+      setSplits(first ? [{ category_id: first.category_id, amount }] : []);
+      setSplitEdited([]);
+      setCatMulti(false);
+      return;
+    }
+    setSplits(categoryId ? [{ category_id: categoryId, amount }] : []);
+    setSplitEdited(categoryId ? [false] : []);
+    setCategoryTouched(true);
+    setCatMulti(true);
+  };
+
+  const togglePayMulti = () => {
+    haptic(8);
+    if (payMulti) {
+      const first = [...pays].sort((a, b) => b.amount - a.amount)[0];
+      if (first?.payment_method_id) {
+        setPaymentMethodId(first.payment_method_id);
+        setMemberId(first.member_id);
+        setPmTouched(true);
+      }
+      setPays([]);
+      setPayEdited([]);
+      setPayMulti(false);
+      return;
+    }
+    if (isCredit && installments > 1) {
+      toast({ message: '할부와 자산 여러 개는 함께 쓸 수 없어요. 할부를 일시불로 바꾼 뒤 고르세요.' });
+      return;
+    }
+    setPays(effectivePmId ? [{ payment_method_id: effectivePmId, member_id: effectiveMemberId, amount }] : []);
+    setPayEdited(effectivePmId ? [false] : []);
+    setPmTouched(true);
+    setPayMulti(true);
+  };
+
+  const editRowAmount = (target: { kind: 'split' | 'pay'; index: number }) => {
+    setAmountTarget(target);
+    setRowExpr('');
+    openPanel('amount');
+  };
+
+  const removeSplit = (i: number) => {
+    const rows = splits.filter((_, k) => k !== i);
+    const flags = splitEdited.filter((_, k) => k !== i);
+    const next = rebalance(amount, rows.map((x) => x.amount), flags);
+    setSplits(rows.map((x, k) => ({ ...x, amount: next[k]! })));
+    setSplitEdited(flags);
+  };
+  const removePay = (i: number) => {
+    const rows = pays.filter((_, k) => k !== i);
+    const flags = payEdited.filter((_, k) => k !== i);
+    const next = rebalance(amount, rows.map((x) => x.amount), flags);
+    setPays(rows.map((x, k) => ({ ...x, amount: next[k]! })));
+    setPayEdited(flags);
+  };
 
   const changeKind = (next: TransactionKind) => {
     if (next === kind) return;
     setKind(next);
     setSplits([]);
-    setSplitMode(false);
+    setCatMulti(false);
+    setSplitEdited([]);
     setCategoryTouched(false);
   };
 
@@ -156,12 +248,32 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   };
 
   const pickCategory = (c: Category | null) => {
+    if (catMulti) {
+      const id = c?.id ?? null;
+      const at = splits.findIndex((x) => x.category_id === id);
+      const rows = at >= 0 ? splits.filter((_, k) => k !== at) : [...splits, { category_id: id, amount: 0 }];
+      const flags = at >= 0 ? splitEdited.filter((_, k) => k !== at) : [...splitEdited, false];
+      const next = rebalance(amount, rows.map((x) => x.amount), flags);
+      setSplits(rows.map((x, k) => ({ ...x, amount: next[k]! })));
+      setSplitEdited(flags);
+      return;
+    }
     setSplits(c ? [{ category_id: c.id, amount }] : []);
     setCategoryTouched(true);
-    openPanel(pmTouched && effectivePmId ? null : 'asset');
+    openPanel(pmTouched && (effectivePmId || pays.length) ? null : 'asset');
   };
 
   const pickAsset = (pm: PaymentMethod) => {
+    if (payMulti) {
+      const at = pays.findIndex((x) => x.payment_method_id === pm.id);
+      const owner = pm.owner_member_id ?? viewingMember?.id ?? me.memberId;
+      const rows = at >= 0 ? pays.filter((_, k) => k !== at) : [...pays, { payment_method_id: pm.id, member_id: owner, amount: 0 }];
+      const flags = at >= 0 ? payEdited.filter((_, k) => k !== at) : [...payEdited, false];
+      const next = rebalance(amount, rows.map((x) => x.amount), flags);
+      setPays(rows.map((x, k) => ({ ...x, amount: next[k]! })));
+      setPayEdited(flags);
+      return;
+    }
     setPaymentMethodId(pm.id);
     setPmTouched(true);
     setMemberId(pm.owner_member_id ?? viewingMember?.id ?? me.memberId);
@@ -174,11 +286,19 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
     setViewingMemberId(activeMembers[(i + 1) % activeMembers.length]!.id);
   };
 
-  const startSplit = () => {
-    setSplits([{ category_id: categoryId, amount }]);
-    setSplitMode(true);
-    setCategoryTouched(true);
-    openPanel(null);
+  /** 말로 넣기: "맥도날드 오천원 현대카드" → 제목·금액·자산을 채우고 빈 곳 입력판을 연다. */
+  const applyVoice = (text: string) => {
+    const r = parseSpokenEntry(text, data.paymentMethods);
+    if (r.title) setTitle(r.title);
+    if (r.amount) setAmountExpr(String(r.amount));
+    const pm = r.paymentMethodId ? data.byId.paymentMethod.get(r.paymentMethodId) : undefined;
+    if (pm && !payMulti) {
+      setPaymentMethodId(pm.id);
+      setPmTouched(true);
+      setMemberId(pm.owner_member_id ?? viewingMember?.id ?? me.memberId);
+    }
+    haptic(10);
+    openPanel(!r.amount ? 'amount' : kind === 'transfer' ? (pm ? null : 'asset') : 'category');
   };
 
   const addTag = () => {
@@ -194,6 +314,12 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   // ── 저장: 기다리지 않고 바로 닫는다(화면에는 즉시 보이고 기록은 뒤에서) ────────
   const buildRow = (): Transaction => {
     const now = new Date().toISOString();
+    const payRows = payMulti
+      ? pays
+          .filter((x) => x.amount > 0)
+          .map((x) => ({ ...x, cash_date: computeCashDate(date, x.payment_method_id ? data.byId.paymentMethod.get(x.payment_method_id) : undefined) }))
+      : [];
+    const primary = payRows.length ? [...payRows].sort((a, b) => b.amount - a.amount)[0]! : null;
     return {
       ...(original ?? {
         id: newId(),
@@ -219,13 +345,14 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
       original_amount: original && original.amount !== amount ? null : (original?.original_amount ?? null),
       occurred_at: fromKst(date, time || '12:00'),
       has_time: !!time,
-      cash_date: cashDate,
+      cash_date: primary ? primary.cash_date : cashDate,
       merchant: title.trim() || null,
       memo: memo.trim() || null,
-      payment_method_id: effectivePmId,
-      member_id: effectiveMemberId,
-      installment_months: isCredit ? installments : 1,
+      payment_method_id: primary ? primary.payment_method_id : effectivePmId,
+      member_id: primary ? primary.member_id : effectiveMemberId,
+      installment_months: payRows.length > 1 ? 1 : primary ? 1 : isCredit ? installments : 1,
       splits: finalSplits,
+      payments: payRows.length > 1 ? payRows : [],
       tag_ids: tagIds,
       status: original?.status === 'review' ? 'confirmed' : (original?.status ?? 'confirmed'),
       review: null,
@@ -260,7 +387,9 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
     setTitle('');
     setAmountExpr('');
     setSplits([]);
-    setSplitMode(false);
+    setCatMulti(false);
+    setSplitEdited([]);
+    if (payMulti) rebalanceAll(0);
     setCategoryTouched(false);
     setTagIds([]);
     setMemo('');
@@ -284,24 +413,57 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   // 패널이 열리면 그 자리만큼 본문 아래를 띄운다.
   const panelNode =
     panel === 'amount' ? (
-      <AmountPanel
-        expr={amountExpr}
-        onChange={setAmountExpr}
-        onDone={() => {
-          const v = evalAmountExpression(amountExpr);
-          if (v !== null && hasOperator(amountExpr)) setAmountExpr(String(v));
-          afterAmount();
-        }}
-        onClose={() => openPanel(null)}
-      />
+      amountTarget ? (
+        <AmountPanel
+          key={`${amountTarget.kind}-${amountTarget.index}`}
+          label={`${amountTargetLabel()} 금액`}
+          expr={rowExpr}
+          onChange={setRowExpr}
+          onDone={() => {
+            const v = evalAmountExpression(rowExpr);
+            if (v !== null) {
+              if (amountTarget.kind === 'split') {
+                const r = editAmount(amount, splits.map((x) => x.amount), splitEdited, amountTarget.index, v);
+                setSplits(splits.map((x, k) => ({ ...x, amount: r.amounts[k]! })));
+                setSplitEdited(r.edited);
+              } else {
+                const r = editAmount(amount, pays.map((x) => x.amount), payEdited, amountTarget.index, v);
+                setPays(pays.map((x, k) => ({ ...x, amount: r.amounts[k]! })));
+                setPayEdited(r.edited);
+              }
+            }
+            const back = amountTarget.kind === 'split' ? 'category' : 'asset';
+            setAmountTarget(null);
+            openPanel(back);
+          }}
+          onClose={() => {
+            setAmountTarget(null);
+            openPanel(null);
+          }}
+        />
+      ) : (
+        <AmountPanel
+          key="total"
+          expr={amountExpr}
+          onChange={setAmountExpr}
+          onDone={() => {
+            const v = evalAmountExpression(amountExpr);
+            if (v !== null && hasOperator(amountExpr)) setAmountExpr(String(v));
+            rebalanceAll(v ?? 0);
+            afterAmount();
+          }}
+          onClose={() => openPanel(null)}
+        />
+      )
     ) : panel === 'category' ? (
       <CategoryPanel
         categories={categories}
-        selectedId={categoryId}
+        selectedIds={catMulti ? splits.map((x) => x.category_id) : [categoryId]}
         recommendedId={recommendedId}
         onPick={pickCategory}
         onAdd={() => setAdding('category')}
-        onSplit={startSplit}
+        multi={catMulti}
+        onToggleMulti={toggleCatMulti}
         onClose={() => openPanel(null)}
       />
     ) : panel === 'asset' ? (
@@ -309,14 +471,26 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         methods={data.paymentMethods}
         members={activeMembers}
         viewingMember={viewingMember}
-        selectedId={effectivePmId}
+        selectedIds={payMulti ? pays.map((x) => x.payment_method_id ?? '') : effectivePmId ? [effectivePmId] : []}
         onPick={pickAsset}
+        multi={payMulti}
+        onToggleMulti={kind === 'transfer' ? undefined : togglePayMulti}
         onNextMember={nextMember}
         nextMember={activeMembers.length > 1 ? (activeMembers[(activeMembers.findIndex((m) => m.id === viewingMember?.id) + 1) % activeMembers.length] ?? null) : null}
         onAdd={() => setAdding('asset')}
         onClose={() => openPanel(null)}
       />
     ) : null;
+
+  function amountTargetLabel(): string {
+    if (!amountTarget) return '';
+    if (amountTarget.kind === 'split') {
+      const id = splits[amountTarget.index]?.category_id;
+      return id ? (data.byId.category.get(id)?.name ?? '분류') : '미분류';
+    }
+    const id = pays[amountTarget.index]?.payment_method_id;
+    return id ? (data.byId.paymentMethod.get(id)?.name ?? '자산') : '자산';
+  }
 
   const dateLabel = `${date.slice(2, 4)}. ${Number(date.slice(5, 7))}. ${Number(date.slice(8, 10))}. (${weekday(date)})`;
   const timeLabel = time ? `${Number(time.slice(0, 2)) < 12 ? '오전' : '오후'} ${((Number(time.slice(0, 2)) + 11) % 12) + 1}:${time.slice(3, 5)}` : '';
@@ -353,6 +527,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
                 <button type="button" aria-label="문자로 넣기" onClick={() => openEditor({ importMode: 'text' })} className="press flex size-11 items-center justify-center rounded-full text-muted">
                   <MessageSquareText className="size-6" aria-hidden />
                 </button>
+                <VoiceButton onText={applyVoice} />
               </>
             )}
           </div>
@@ -406,9 +581,12 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
                   <input type="time" aria-label="시각" value={time} onChange={(e) => setTime(e.target.value)} className="absolute inset-0 opacity-0" />
                 </label>
               </div>
-              <label className={`relative ml-auto flex flex-col items-center text-[11px] ${isCredit ? 'text-brand' : 'text-muted/50'}`}>
-                <span className="text-sm font-semibold">{installments > 1 && isCredit ? `${installments}개월` : '할부'}</span>
-                {isCredit ? (
+              <label
+                className={`relative ml-auto flex flex-col items-center text-[11px] ${isCredit && !payMulti ? 'text-brand' : 'text-muted/50'}`}
+                onClick={() => payMulti && toast({ message: '자산을 여러 개 고르면 할부를 쓸 수 없어요.' })}
+              >
+                <span className="text-sm font-semibold">{installments > 1 && isCredit && !payMulti ? `${installments}개월` : '할부'}</span>
+                {isCredit && !payMulti ? (
                   <select aria-label="할부" value={installments} onChange={(e) => setInstallments(Number(e.target.value))} className="absolute inset-0 opacity-0">
                     {INSTALLMENTS.map((n) => (
                       <option key={n} value={n}>
@@ -480,47 +658,91 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
             </Row>
 
             {/* 4) 분류 */}
-            {kind !== 'transfer' ? (
-              <Row label="분류" active={panel === 'category'} onClick={() => !splitMode && openPanel('category')}>
-                {splitMode ? (
-                  <span className="text-base">{splits.length}개로 나눔</span>
-                ) : (
-                  <span className={`flex flex-1 items-center gap-2 text-base ${category ? '' : 'text-muted/50'}`}>
-                    {category ? (
+            {kind !== 'transfer' && catMulti ? (
+              <MultiRows
+                label="분류"
+                active={panel === 'category'}
+                onOpen={() => openPanel('category')}
+                gap={splitGap}
+                empty="분류를 고르세요"
+                rows={splits.map((x, i) => {
+                  const c = x.category_id ? data.byId.category.get(x.category_id) : null;
+                  return {
+                    key: x.category_id ?? 'none',
+                    label: (
                       <>
-                        <span aria-hidden>{category.icon}</span>
-                        {category.name}
-                        {recommendedId === category.id ? <Sparkles className="size-4 text-brand" aria-label="제목으로 추천" /> : null}
+                        <span aria-hidden>{c?.icon ?? '❔'}</span>
+                        <span className="truncate">{c?.name ?? '미분류'}</span>
                       </>
-                    ) : (
-                      '미분류'
-                    )}
-                  </span>
-                )}
+                    ),
+                    amount: x.amount,
+                    editing: panel === 'amount' && amountTarget?.kind === 'split' && amountTarget.index === i,
+                    onAmount: () => editRowAmount({ kind: 'split', index: i }),
+                    onRemove: () => removeSplit(i),
+                  };
+                })}
+              />
+            ) : kind !== 'transfer' ? (
+              <Row label="분류" active={panel === 'category'} onClick={() => openPanel('category')}>
+                <span className={`flex flex-1 items-center gap-2 text-base ${category ? '' : 'text-muted/50'}`}>
+                  {category ? (
+                    <>
+                      <span aria-hidden>{category.icon}</span>
+                      {category.name}
+                      {recommendedId === category.id ? <Sparkles className="size-4 text-brand" aria-label="제목으로 추천" /> : null}
+                    </>
+                  ) : (
+                    '미분류'
+                  )}
+                </span>
               </Row>
-            ) : null}
-            {splitMode ? (
-              <div className="py-2 pl-14">
-                <SplitEditor amount={amount} splits={splits} categories={categories} onChange={setSplits} />
-                <button type="button" onClick={() => setSplitMode(false)} className="mt-1 text-sm text-muted underline">
-                  나누기 취소
-                </button>
-              </div>
             ) : null}
 
             {/* 5) 자산 */}
-            <Row label={kind === 'transfer' ? '보낸 곳' : kind === 'income' ? '받은 곳' : '자산'} active={panel === 'asset'} onClick={() => openPanel('asset')}>
-              <span className={`flex flex-1 items-center gap-2 text-base ${paymentMethod ? '' : 'text-muted/50'}`}>
-                {activeMembers.length > 1 && member ? <MemberBadge member={member} size="md" /> : null}
-                {activeMembers.length > 1 && member && paymentMethod ? <span className="text-muted">·</span> : null}
-                {paymentMethod?.name ?? (original?.payment_label ? `‘${original.payment_label}’` : '선택')}
-              </span>
-            </Row>
-            {cashDate !== date ? (
-              <p className="py-1 pl-14 text-xs font-normal text-muted">
-                {shortDate(cashDate)} 결제 예정{isCredit && installments > 1 ? ` · ${installments}개월 나눠서` : ''}
-              </p>
-            ) : null}
+            {payMulti ? (
+              <MultiRows
+                label="자산"
+                active={panel === 'asset'}
+                onOpen={() => openPanel('asset')}
+                gap={payGap}
+                empty="자산을 고르세요"
+                rows={pays.map((x, i) => {
+                  const pm = x.payment_method_id ? data.byId.paymentMethod.get(x.payment_method_id) : undefined;
+                  const who = x.member_id ? data.byId.member.get(x.member_id) : null;
+                  const due = computeCashDate(date, pm);
+                  return {
+                    key: x.payment_method_id ?? String(i),
+                    label: (
+                      <>
+                        {activeMembers.length > 1 && who ? <MemberBadge member={who} size="md" /> : null}
+                        <span aria-hidden>{assetIcon(pm)}</span>
+                        <span className="truncate">{pm?.name ?? '자산'}</span>
+                      </>
+                    ),
+                    sub: due !== date ? `${shortDate(due)} 결제 예정` : null,
+                    amount: x.amount,
+                    editing: panel === 'amount' && amountTarget?.kind === 'pay' && amountTarget.index === i,
+                    onAmount: () => editRowAmount({ kind: 'pay', index: i }),
+                    onRemove: () => removePay(i),
+                  };
+                })}
+              />
+            ) : (
+              <>
+                <Row label={kind === 'transfer' ? '보낸 곳' : kind === 'income' ? '받은 곳' : '자산'} active={panel === 'asset'} onClick={() => openPanel('asset')}>
+                  <span className={`flex min-w-0 flex-1 items-center gap-1.5 text-base ${paymentMethod ? '' : 'text-muted/50'}`}>
+                    {activeMembers.length > 1 && member ? <MemberBadge member={member} size="md" /> : null}
+                    {paymentMethod ? <span aria-hidden>{assetIcon(paymentMethod)}</span> : null}
+                    <span className="truncate">{paymentMethod?.name ?? (original?.payment_label ? `‘${original.payment_label}’` : '선택')}</span>
+                  </span>
+                </Row>
+                {cashDate !== date ? (
+                  <p className="py-1 pl-14 text-xs font-normal text-muted">
+                    {shortDate(cashDate)} 결제 예정{isCredit && installments > 1 ? ` · ${installments}개월 나눠서` : ''}
+                  </p>
+                ) : null}
+              </>
+            )}
           </div>
 
           {transferHint ? (
@@ -618,6 +840,59 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         </Sheet>
       ) : null}
     </>
+  );
+}
+
+interface MultiRow {
+  key: string;
+  label: ReactNode;
+  sub?: string | null;
+  amount: number;
+  editing: boolean;
+  onAmount: () => void;
+  onRemove: () => void;
+}
+
+/** 다중선택 줄들: 왼쪽 라벨은 첫 줄에만, 줄마다 금액(누르면 숫자패드)과 ✕. */
+function MultiRows({ label, rows, gap, active, empty, onOpen }: { label: string; rows: MultiRow[]; gap: number; active: boolean; empty: string; onOpen: () => void }) {
+  return (
+    <div className="flex gap-3">
+      <span className="flex h-11 w-11 shrink-0 items-center text-sm font-normal text-muted">{label}</span>
+      <div className={`min-w-0 flex-1 border-b-2 transition-colors ${active ? 'border-brand' : 'border-line'}`}>
+        {rows.length === 0 ? (
+          <button type="button" onClick={onOpen} className="flex h-11 w-full items-center text-base text-muted/50">
+            {empty}
+          </button>
+        ) : null}
+        {rows.map((r, i) => (
+          <div key={r.key} className={`${i > 0 ? 'border-t border-line' : ''}`}>
+            <div className="flex min-h-11 items-center gap-2">
+              <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-base">
+                {r.label}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  r.onAmount();
+                }}
+                aria-label="금액 고치기"
+                className={`tabular h-8 shrink-0 rounded-lg px-2.5 text-right text-base font-semibold ${r.editing ? 'bg-brand-soft text-brand ring-1 ring-brand' : 'bg-surface-2'}`}
+              >
+                {formatAmount(r.amount)}원
+              </button>
+              <button type="button" aria-label="빼기" onClick={r.onRemove} className="press -mr-1 rounded-full p-1.5 text-muted">
+                <X className="size-4" aria-hidden />
+              </button>
+            </div>
+            {r.sub ? <p className="-mt-1.5 pb-1.5 text-xs font-normal text-muted">{r.sub}</p> : null}
+          </div>
+        ))}
+        {gap !== 0 && rows.length > 0 ? (
+          <p className="pb-1.5 text-xs font-semibold text-expense">{gap > 0 ? `남은 금액 ${formatAmount(gap)}원` : `${formatAmount(-gap)}원 넘음`}</p>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

@@ -217,5 +217,11 @@ select test.ok((select count(*) from public.payment_methods where owner_member_i
 select test.login(:'alice');
 select test.ok(test.throws(format($$select * from public.create_member_invite(%L, %L)$$, :'ha', :'ph')), '이미 연결된 자리는 다시 초대 불가');
 
+-- ── 자산별 금액 합은 전체 금액과 같아야 한다 ────────────────────────────
+select test.ok(test.throws(format($$insert into public.transactions (household_id, kind, amount, occurred_at, cash_date, payments)
+  values (%L, 'expense', 7000, now(), current_date, '[{"amount":3000},{"amount":3000}]')$$, :'ha')), '자산별 금액 합이 다르면 거부');
+select test.ok(test.affected(format($$insert into public.transactions (household_id, kind, amount, occurred_at, cash_date, payments)
+  values (%L, 'expense', 7000, now(), current_date, '[{"amount":3000},{"amount":4000}]')$$, :'ha')) = 1, '자산별 금액 합이 맞으면 저장');
+
 reset role;
 \echo 'ALL DB TESTS PASSED'

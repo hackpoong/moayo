@@ -3,6 +3,7 @@
 //  * 현금일 기준: 결제일에, 할부면 매달 나눠서
 //  * 취소된 내역과 삭제된 내역은 빠진다. 이체는 kind 가 'transfer' 로 남아서 지출·수입 합계에는 안 들어간다.
 
+import { allocate, paymentsOf } from './allocate.ts';
 import { cashFlows } from './cashDate.ts';
 import { toKstDate } from './kst.ts';
 import type { DateBasis, DateString, Transaction, TransactionKind, Uuid } from './types.ts';
@@ -30,31 +31,37 @@ export type LedgerTx = Pick<
   | 'member_id'
   | 'payment_method_id'
   | 'deleted_at'
->;
+> &
+  Partial<Pick<Transaction, 'payments'>>;
 
 /** 집계에 넣을 내역인지. */
 export function isCounted(tx: Pick<Transaction, 'status' | 'deleted_at'>): boolean {
   return tx.deleted_at === null && tx.status !== 'canceled';
 }
 
-/** 거래를 기준 날짜별·카테고리별 조각으로 펼친다. 조각 합계는 항상 거래 금액과 같다. */
+/**
+ * 거래를 기준 날짜별·카테고리별·자산별 조각으로 펼친다. 조각 합계는 항상 거래 금액과 같다.
+ * 여러 자산으로 나눠 낸 내역은 분류 몫을 자산 몫 비율대로 나눠, 쓴 사람·자산·나간 날이 자산마다 따로 잡힌다.
+ */
 export function toEntries(tx: LedgerTx, basis: DateBasis): LedgerEntry[] {
   if (!isCounted(tx)) return [];
   const parts = tx.splits.length > 0 ? tx.splits : [{ category_id: null, amount: tx.amount }];
-  const base = { txId: tx.id, kind: tx.kind, memberId: tx.member_id, paymentMethodId: tx.payment_method_id };
-
-  if (basis === 'occurred') {
-    const date = toKstDate(tx.occurred_at);
-    return parts.map((p) => ({ ...base, date, amount: p.amount, categoryId: p.category_id }));
-  }
-  return parts.flatMap((p) =>
-    cashFlows(p.amount, tx.cash_date, tx.installment_months).map((flow) => ({
-      ...base,
-      date: flow.date,
-      amount: flow.amount,
-      categoryId: p.category_id,
-    })),
-  );
+  const pays = paymentsOf(tx);
+  const cells = pays.length === 1 ? parts.map((p) => [p.amount]) : allocate(parts, pays);
+  const out: LedgerEntry[] = [];
+  const date = toKstDate(tx.occurred_at);
+  parts.forEach((p, i) => {
+    pays.forEach((q, j) => {
+      const amount = cells[i]![j]!;
+      if (amount === 0 && (parts.length > 1 || pays.length > 1)) return;
+      const base = { txId: tx.id, kind: tx.kind, memberId: q.member_id, paymentMethodId: q.payment_method_id, categoryId: p.category_id };
+      if (basis === 'occurred') out.push({ ...base, date, amount });
+      else
+        for (const flow of cashFlows(amount, pays.length === 1 ? tx.cash_date : q.cash_date, pays.length === 1 ? tx.installment_months : 1))
+          out.push({ ...base, date: flow.date, amount: flow.amount });
+    });
+  });
+  return out;
 }
 
 export function toAllEntries(txs: readonly LedgerTx[], basis: DateBasis): LedgerEntry[] {

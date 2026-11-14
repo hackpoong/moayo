@@ -8,9 +8,10 @@ import {
   type PaymentMethod,
   type PaymentMethodType,
 } from '@moayo/core';
-import { ArrowLeftRight, ChevronDown, Delete, Pencil, Scissors, Sparkles } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown, Delete, Pencil, Sparkles } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { MemberBadge } from '../components/MemberBadge.tsx';
+import { assetIcon } from '../lib/assets.ts';
 import { haptic } from '../lib/flash.ts';
 
 export type PanelKind = 'amount' | 'category' | 'asset';
@@ -43,6 +44,21 @@ function PanelFrame({ title, actions, onClose, children }: { title: ReactNode; a
   );
 }
 
+/** 위 막대의 다중선택 켜고 끄기. */
+function MultiToggle({ on, disabled, onClick }: { on: boolean; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-label="다중선택"
+      onClick={onClick}
+      className={`press mr-1 h-8 rounded-full px-3 text-sm font-semibold transition-colors ${on ? 'bg-brand text-brand-fg' : 'bg-bg/15 text-bg'} ${disabled ? 'opacity-40' : ''}`}
+    >
+      다중선택
+    </button>
+  );
+}
+
 export function BarButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
     <button type="button" aria-label={label} title={label} onClick={onClick} className="press flex h-11 items-center gap-1.5 rounded-full px-3 text-sm font-medium">
@@ -54,7 +70,7 @@ export function BarButton({ label, onClick, children }: { label: string; onClick
 // ── 금액 ───────────────────────────────────────────────────────────────────
 const KEYS = [['1', '2', '3', 'del'], ['4', '5', '6', '-'], ['7', '8', '9', '+'], ['00', '0', '000', 'done']] as const;
 
-export function AmountPanel({ expr, onChange, onDone, onClose }: { expr: string; onChange: (e: string) => void; onDone: () => void; onClose: () => void }) {
+export function AmountPanel({ expr, onChange, onDone, onClose, label = '금액' }: { expr: string; onChange: (e: string) => void; onDone: () => void; onClose: () => void; label?: string }) {
   const press = (key: string) => {
     haptic(6);
     if (key === 'del') return onChange(expr.slice(0, -1));
@@ -71,7 +87,7 @@ export function AmountPanel({ expr, onChange, onDone, onClose }: { expr: string;
   const preview = hasOperator(expr) ? evalAmountExpression(expr) : null;
 
   return (
-    <PanelFrame title={preview !== null ? `금액 = ${formatAmount(preview)}원` : '금액'} onClose={onClose}>
+    <PanelFrame title={preview !== null ? `${label} = ${formatAmount(preview)}원` : expr ? `${label} ${formatAmount(Number(expr) || 0)}원` : label} onClose={onClose}>
       <div className="grid grid-cols-4 gap-px bg-line">
         {KEYS.flat().map((k) => (
           <button
@@ -99,32 +115,31 @@ export function AmountPanel({ expr, onChange, onDone, onClose }: { expr: string;
 // ── 분류 ───────────────────────────────────────────────────────────────────
 export function CategoryPanel({
   categories,
-  selectedId,
+  selectedIds,
   recommendedId,
   onPick,
   onAdd,
-  onSplit,
+  multi,
+  onToggleMulti,
   onClose,
 }: {
   categories: Category[];
-  selectedId: string | null;
+  selectedIds: (string | null)[];
   recommendedId: string | null;
   onPick: (c: Category | null) => void;
   onAdd: () => void;
-  onSplit: () => void;
+  multi: boolean;
+  onToggleMulti: () => void;
   onClose: () => void;
 }) {
   const isFresh = useFreshGuard();
   return (
     <PanelFrame
-      title="분류"
+      title={multi ? `분류 ${selectedIds.length}개` : '분류'}
       onClose={onClose}
       actions={
         <>
-          <BarButton label="여러 분류로 나누기" onClick={onSplit}>
-            <Scissors className="size-4" aria-hidden />
-            나누기
-          </BarButton>
+          <MultiToggle on={multi} onClick={onToggleMulti} />
           <BarButton label="분류 추가" onClick={onAdd}>
             <Pencil className="size-5" aria-hidden />
           </BarButton>
@@ -141,16 +156,19 @@ export function CategoryPanel({
               haptic(6);
               onPick(c);
             }}
-            className={`relative flex h-[4.25rem] flex-col items-center justify-center gap-0.5 px-1 text-[13px] active:brightness-95 ${c.id === selectedId ? 'bg-brand-soft font-semibold text-brand' : 'bg-surface'}`}
+            aria-pressed={selectedIds.includes(c.id)}
+            className={`relative flex h-[4rem] flex-col items-center justify-center gap-0.5 px-1 text-[13px] active:brightness-95 ${selectedIds.includes(c.id) ? 'bg-brand-soft font-semibold text-brand' : 'bg-surface'}`}
           >
             {c.id === recommendedId ? <Sparkles className="absolute right-1.5 top-1.5 size-3.5 text-brand" aria-label="추천" /> : null}
-            <span className="text-xl leading-none" aria-hidden>
-              {c.icon ?? '•'}
-            </span>
+            {c.icon ? (
+              <span className="text-xl leading-none" aria-hidden>
+                {c.icon}
+              </span>
+            ) : null}
             <span className="line-clamp-1">{c.name}</span>
           </button>
         ))}
-        <button type="button" onClick={() => !isFresh() && onPick(null)} className={`flex h-[4.25rem] flex-col items-center justify-center gap-0.5 text-[13px] ${selectedId === null ? 'bg-brand-soft font-semibold text-brand' : 'bg-surface text-muted'}`}>
+        <button type="button" onClick={() => !isFresh() && onPick(null)} className={`flex h-[4rem] flex-col items-center justify-center gap-0.5 text-[13px] ${selectedIds.includes(null) ? 'bg-brand-soft font-semibold text-brand' : 'bg-surface text-muted'}`}>
           <span className="text-xl leading-none" aria-hidden>
             ❔
           </span>
@@ -168,8 +186,10 @@ export function AssetPanel({
   methods,
   members,
   viewingMember,
-  selectedId,
+  selectedIds,
   onPick,
+  multi,
+  onToggleMulti,
   onNextMember,
   nextMember,
   onAdd,
@@ -178,8 +198,11 @@ export function AssetPanel({
   methods: PaymentMethod[];
   members: Member[];
   viewingMember: Member | null;
-  selectedId: string | null;
+  selectedIds: string[];
   onPick: (pm: PaymentMethod) => void;
+  multi: boolean;
+  /** 없으면 다중선택을 보여 주지 않는다(이체 등). */
+  onToggleMulti?: () => void;
   onNextMember: () => void;
   /** 바꾸기를 누르면 보게 될 사람. */
   nextMember?: Member | null;
@@ -195,11 +218,10 @@ export function AssetPanel({
     <PanelFrame
       title={
         members.length > 1 && viewingMember ? (
-          <span className="flex items-center gap-2">
+          <span className="flex items-center" aria-label={`${viewingMember.display_name}의 자산`}>
             <span className="rounded-full bg-bg/15 px-2 py-0.5">
               <MemberBadge member={viewingMember} size="md" />
             </span>
-            의 자산
           </span>
         ) : (
           '자산'
@@ -208,6 +230,7 @@ export function AssetPanel({
       onClose={onClose}
       actions={
         <>
+          {onToggleMulti ? <MultiToggle on={multi} onClick={onToggleMulti} /> : null}
           {members.length > 1 ? (
             <BarButton label="다른 사람 자산 보기" onClick={onNextMember}>
               <ArrowLeftRight className="size-4" aria-hidden />
@@ -238,8 +261,10 @@ export function AssetPanel({
                     haptic(6);
                     onPick(pm);
                   }}
-                  className={`flex h-14 items-center justify-center px-2 text-center text-[14px] leading-tight active:brightness-95 ${pm.id === selectedId ? 'bg-brand-soft font-semibold text-brand' : 'bg-surface'}`}
+                  aria-pressed={selectedIds.includes(pm.id)}
+                  className={`flex h-13 items-center justify-center gap-1 px-2 text-center text-[14px] leading-tight active:brightness-95 ${selectedIds.includes(pm.id) ? 'bg-brand-soft font-semibold text-brand' : 'bg-surface'}`}
                 >
+                  <span aria-hidden>{assetIcon(pm)}</span>
                   <span className="line-clamp-2">{pm.name}</span>
                 </button>
               ))}

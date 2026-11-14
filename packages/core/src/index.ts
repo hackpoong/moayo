@@ -9,3 +9,5 @@ export * from './csv.ts';
 export * from './ingest/index.ts';
 export * from './suggest.ts';
 export * from './amount.ts';
+export * from './allocate.ts';
+export * from './voice.ts';

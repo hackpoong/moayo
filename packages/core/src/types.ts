@@ -121,6 +121,16 @@ export interface Split {
   amount: number;
 }
 
+/** 여러 자산으로 나눠 낸 결제의 한 몫. */
+export interface Payment {
+  payment_method_id: Uuid | null;
+  /** 이 몫을 낸 사람(보통 자산 주인). */
+  member_id: Uuid | null;
+  amount: number;
+  /** 이 몫이 실제로 나가는 날(카드면 결제일). */
+  cash_date: DateString;
+}
+
 export interface ReceiptItem {
   name: string;
   amount: number;
@@ -144,6 +154,8 @@ export interface Transaction extends SyncedRow {
   member_id: Uuid | null;
   installment_months: number;
   splits: Split[];
+  /** 여러 자산으로 나눠 냈을 때 자산별 금액. 비어 있으면 payment_method_id·member_id 한 곳에서 전액. */
+  payments?: Payment[];
   tag_ids: Uuid[];
   approval_no: string | null;
   card_last4: string | null;

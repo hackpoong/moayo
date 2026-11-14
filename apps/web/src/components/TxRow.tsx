@@ -16,10 +16,13 @@ export function TxRow({ tx, amount }: { tx: Transaction; amount?: number }) {
   const split = tx.splits.length > 1;
   const title = tx.merchant || (tx.kind === 'transfer' ? '이체' : (firstCat?.name ?? '미분류'));
   const pm = tx.payment_method_id ? data.byId.paymentMethod.get(tx.payment_method_id) : null;
-  const member = tx.member_id ? data.byId.member.get(tx.member_id) : null;
+  const multiPay = (tx.payments?.length ?? 0) > 1;
+  const payers = multiPay
+    ? [...new Set(tx.payments!.map((p) => p.member_id))].map((id) => (id ? data.byId.member.get(id) : undefined)).filter((m) => !!m)
+    : [tx.member_id ? data.byId.member.get(tx.member_id) : undefined].filter((m) => !!m);
   const sub = [
     tx.merchant && tx.kind !== 'transfer' ? (split ? `${firstCat?.name ?? '미분류'} 외 ${tx.splits.length - 1}` : (firstCat?.name ?? '미분류')) : null,
-    pm?.name,
+    pm ? (multiPay ? `${pm.name} 외 ${tx.payments!.length - 1}` : pm.name) : null,
     tx.installment_months > 1 ? `${tx.installment_months}개월` : null,
     tx.has_time ? toKstTime(tx.occurred_at) : null,
   ].filter(Boolean);
@@ -40,7 +43,7 @@ export function TxRow({ tx, amount }: { tx: Transaction; amount?: number }) {
           {tx.status === 'review' ? <CircleAlert className="size-4 shrink-0 text-expense" aria-label="확인 필요" /> : null}
         </span>
         <span className="flex items-center gap-1.5 text-[13px] font-normal text-muted">
-          {data.members.length > 1 && member ? <MemberBadge member={member} /> : null}
+          {data.members.length > 1 ? payers.map((m) => <MemberBadge key={m.id} member={m} />) : null}
           <span className="truncate">{sub.join(' · ')}</span>
         </span>
       </span>
