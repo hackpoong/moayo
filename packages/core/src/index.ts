@@ -7,3 +7,4 @@ export * from './rules.ts';
 export * from './search.ts';
 export * from './csv.ts';
 export * from './ingest/index.ts';
+export * from './suggest.ts';

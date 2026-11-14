@@ -70,7 +70,10 @@ npm run test:db     # 로컬 Postgres 에 임시 DB 를 만들어 마이그레�
 
 - `supabase/functions/ingest` 가 사진·문자 원문을 받아 처리합니다. 웹과 같은 로직(`packages/core`)을 복사해서 씁니다.
 - AI 키는 Supabase → Edge Functions → Secrets 에 `ANTHROPIC_API_KEY`(필수), `GEMINI_API_KEY`, `OPENAI_API_KEY` 로 넣습니다.
-  기본 모델은 `AI_PROVIDER`, `AI_MODEL` 로 바꿉니다(기본: anthropic / claude-haiku-5-5).
+  기본 모델은 `AI_PROVIDER`, `AI_MODEL`, `AI_EFFORT`(생각 깊이) 로 바꿉니다. 지금 설정: gemini / gemini-3.5-flash / low.
+  `AI_PROVIDER_FAST`·`AI_MODEL_FAST` 를 넣으면 싼 모델로 먼저 읽고, 결과가 미심쩍을 때만 기본 모델로 다시 읽습니다.
+- AI 호출을 줄이는 장치: 결제 문자는 규칙으로 읽기 → 같은 원문은 처음 결과 재사용 → 거의 같은 사진(지문 비교)은 예전 결과 재사용 →
+  연도·이체·잘린 줄은 AI 대신 코드로 바로잡기 → 직접 입력할 때 카테고리 추천은 예전 기록·낱말 사전(AI 없음)
 - 배포: `npm run sync-core` 후 `supabase functions deploy ingest --use-api --no-verify-jwt`
 - 정확도 비교: `scripts/eval-extract.ts` (정답지와 이미지는 개인 정보라 레포 밖에 둡니다)
 

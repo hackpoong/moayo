@@ -495,3 +495,34 @@ describe('parseSms', () => {
     expect(parseSms('이벤트! 최대 50,000원 할인', today)).toBeNull();
   });
 });
+
+describe('우리끼리 이체 양쪽 기록', () => {
+  it('은행 쪽 충전과 지역화폐 앱 쪽 충전은 하나', () => {
+    const db = ingest([], extraction([{ date: '2026-11-01', merchant: '코나아이 충전', amount: 300000, greyed: true, payment_label: '하나 → 여민전' }])).db;
+    const r = ingest(db, extraction([{ date: '2026-11-01', time: '10:16', merchant: '여민전 충전', amount: 300000, kind: 'income', payment_label: '여민전' }], 'local_currency_app'));
+    expect(r.decisions[0]!.action).toBe('merged');
+    expect(r.db).toHaveLength(1);
+  });
+});
+
+describe('연도 바로잡기', () => {
+  it('목록 캡처에서 작년으로 잘못 읽은 날짜는 올해로', async () => {
+    const { fixYear } = await import('./normalize.ts');
+    expect(fixYear('2025-10-31', '2026-11-14', 'toss_list')).toBe('2026-10-31');
+    expect(fixYear('2026-10-31', '2026-11-14', 'toss_list')).toBe('2026-10-31');
+    // 올해로 옮기면 미래가 되는 날짜(작년 12월 내역)는 그대로
+    expect(fixYear('2025-12-20', '2026-01-05', 'toss_list')).toBe('2025-12-20');
+    // 영수증은 연도가 찍혀 있으니 그대로
+    expect(fixYear('2025-10-31', '2026-11-14', 'receipt')).toBe('2025-10-31');
+  });
+});
+
+describe('잘못 이체로 보던 경우', () => {
+  it('체크카드로 낸 결제의 회색(취소) 줄은 이체가 아니다', () => {
+    const cands = normalizeExtraction(extraction([{ merchant: '철도승차권 발매', amount: 16900, status: 'canceled', greyed: true, payment_label: '토스뱅크 체크카드' }]), ctx());
+    expect(cands[0]!.kind).toBe('expense');
+  });
+  it("AI 가 잘린 줄에 붙인 '(상품명 잘림)' 은 버린다", () => {
+    expect(normalizeExtraction(extraction([{ merchant: '(상품명 잘림)', amount: 14200 }]), ctx())).toHaveLength(0);
+  });
+});

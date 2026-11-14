@@ -1,4 +1,4 @@
-import { computeCashDate, PAYMENT_METHOD_TYPE_LABEL, toKstDate, type PaymentMethod, type PaymentMethodType } from '@moayo/core';
+import { computeCashDate, PAYMENT_METHOD_TYPE_LABEL, toKstDate, type PaymentMethod } from '@moayo/core';
 import { Link2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Sheet } from '../../components/Sheet.tsx';
@@ -6,17 +6,7 @@ import { Button } from '../../components/ui.tsx';
 import { useData } from '../../data/dataContext.ts';
 import { baseRow, useMutations } from '../../data/mutations.ts';
 import { useCurrentHousehold } from '../../lib/householdContext.ts';
-
-/** 표시 이름으로 종류를 짐작한다. */
-function guessType(label: string): PaymentMethodType {
-  if (/여민전|코나|지역화폐/.test(label)) return 'local_currency';
-  if (/온누리|상품권/.test(label)) return 'gift_voucher';
-  if (/체크/.test(label)) return 'check_card';
-  if (/카드/.test(label)) return 'credit_card';
-  if (/페이|머니/.test(label)) return 'easy_pay';
-  if (/현금|ATM/i.test(label)) return 'cash';
-  return 'bank_account';
-}
+import { guessPaymentType as guessType } from '../../lib/paymentType.ts';
 
 /** 자동 입력에서 들어온, 아직 결제수단과 연결되지 않은 표시 이름들. */
 export function PaymentLabels() {

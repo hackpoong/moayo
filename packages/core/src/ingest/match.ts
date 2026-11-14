@@ -77,7 +77,11 @@ export function scorePair(c: Candidate, t: Transaction, methods: readonly Paymen
 
   const cLabeled = !!(c.payment_method_id || c.payment_label);
   const tLabeled = !!(t.payment_method_id || t.payment_label);
-  if (oneWrapped) {
+  const bothTransfer = c.kind === 'transfer' && t.kind === 'transfer';
+  if (bothTransfer && sameDate && labelKey(c.payment_label ?? '') !== labelKey(t.payment_label ?? '')) {
+    // 우리끼리 이체는 보내는 쪽(은행·토스)과 받는 쪽(지역화폐·페이 앱)에 각각 찍힌다.
+    score += 25;
+  } else if (oneWrapped) {
     score += 10;
   } else if (c.payment_method_id && t.payment_method_id) {
     if (c.payment_method_id !== t.payment_method_id) return null;
@@ -94,7 +98,8 @@ export function scorePair(c: Candidate, t: Transaction, methods: readonly Paymen
   }
 
   const sim = merchantSimilarity(c.merchant, t.merchant);
-  if (sim !== null) score += sim >= 0.6 ? 25 : sim < 0.3 && !oneWrapped ? -10 : 0;
+  // 페이 앱·우리끼리 이체는 양쪽 이름이 원래 다르게 찍힌다(예: 코나아이 충전 / 여민전 충전).
+  if (sim !== null) score += sim >= 0.6 ? 25 : sim < 0.3 && !oneWrapped && !bothTransfer ? -10 : 0;
 
   if (c.kind !== t.kind) score -= 10;
 

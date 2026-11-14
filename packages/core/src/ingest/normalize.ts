@@ -56,7 +56,9 @@ const isTransferCharge = (s: string) => /충전/.test(s) && !/하이패스|교�
 
 function decideKind(item: ExtractedItem, rules: readonly TransferRule[], trustGrey: boolean): { kind: Candidate['kind']; note: string | null } {
   // AI 가 검은 금액을 회색으로 잘못 읽는 일이 있어서, 이체다운 단서(이체·충전·'A → B' 계좌·카드사 이름)가 함께 있을 때만 믿는다.
-  const transferish = /이체|충전|대금|머니|→|->|카드$/.test(`${item.merchant} ${item.payment_label ?? ''}`.trim()) || /카드$/.test(item.merchant.trim());
+  // 가게 이름이 이체·충전·대금이거나 카드사 이름 자체(카드대금 출금), 또는 결제수단 자리에 'A → B' 계좌 이동이 적힌 경우.
+  const label = item.payment_label ?? '';
+  const transferish = /이체|충전|대금|머니/.test(item.merchant) || /카드$/.test(item.merchant.trim()) || /→|->|머니/.test(label);
   if (trustGrey && item.greyed && transferish && item.kind !== 'transfer')
     return { kind: 'transfer', note: '원문에서 소비가 아닌 줄로 표시되어 이체로 분류' };
   if (item.kind !== 'transfer' && (TRANSFER_WORDS.test(item.merchant) || isTransferCharge(item.merchant)))
@@ -91,6 +93,8 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
     if (item.status === 'declined') return;
     const amount = Math.round(Math.abs(item.amount));
     if (!Number.isFinite(amount) || amount <= 0 || !item.merchant?.trim()) return;
+    // '(상품명 잘림)' 처럼 AI 가 잘린 줄에 붙인 자리 표시는 실제 거래가 아니다.
+    if (/잘림|잘린|알\s*수\s*없|읽을\s*수\s*없|unknown|truncated/i.test(item.merchant)) return;
 
     const notes: string[] = [];
     // 회색 표시('소비 아님')는 토스·은행 앱 목록에서만 의미가 있다. 페이 앱·영수증의 흐린 글씨는 무시한다.
@@ -100,7 +104,7 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
     if (item.status === 'partial_canceled') notes.push(`부분취소 (원래 ${item.original_amount ?? '?'}원)`);
     if (item.foreign_currency && item.foreign_amount) notes.push(`해외 결제 ${item.foreign_amount} ${item.foreign_currency}`);
 
-    const date = item.date && /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : ctx.fallbackDate;
+    const date = fixYear(item.date && /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : ctx.fallbackDate, ctx.fallbackDate, extraction.source_kind);
     const time = item.time && /^\d{1,2}:\d{2}$/.test(item.time) ? item.time.padStart(5, '0') : null;
     const method = resolvePaymentMethod(item.payment_label, item.card_last4, ctx.paymentMethods);
     const merchant = item.merchant.trim().slice(0, 60);
@@ -195,4 +199,17 @@ function collapsePairs(cands: Candidate[], methods: readonly PaymentMethod[]): C
     if (twin) dropped.add(u.index);
   }
   return cands.filter((c) => !dropped.has(c.index));
+}
+
+/**
+ * 연도 바로잡기. 앱 목록 화면에는 연도가 없어서 AI 가 작년으로 적는 일이 있다.
+ * 반년 넘게 지난 날짜인데 올해 같은 날로 옮기면 오늘을 넘지 않는 경우 올해로 고친다(영수증·명세서는 연도가 찍혀 있으니 그대로).
+ */
+export function fixYear(date: string, today: string, sourceKind: Extraction['source_kind']): string {
+  if (sourceKind === 'receipt' || sourceKind === 'card_statement') return date;
+  const ageDays = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86_400_000;
+  if (ageDays < 180) return date;
+  const moved = `${today.slice(0, 4)}${date.slice(4)}`;
+  const movedAge = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${moved}T00:00:00Z`)) / 86_400_000;
+  return movedAge >= -1 && movedAge < 180 ? moved : date;
 }

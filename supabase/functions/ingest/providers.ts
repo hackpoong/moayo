@@ -6,10 +6,14 @@ import { coerceExtraction, EXTRACTION_SCHEMA, toAnyOfNullable, type Extraction }
 
 export type Provider = 'anthropic' | 'gemini' | 'openai';
 
+export type Effort = 'minimal' | 'low' | 'medium' | 'high';
+
 export interface ExtractInput {
   system: string;
   instruction: string;
   image?: { mime: string; b64: string };
+  /** 생각(추론) 깊이. 옮겨 적기는 낮아도 충분하고, 출력 토큰(=비용)이 크게 준다. */
+  effort?: Effort;
 }
 
 export interface ExtractOutput {
@@ -98,7 +102,7 @@ async function anthropic(model: string, input: ExtractInput) {
       system: input.system,
       messages: [{ role: 'user' as const, content }],
       // 옮겨 적기는 깊이 생각할 일이 아니라서 effort 를 낮춘다.
-      output_config: { effort: 'low' as const, format: { type: 'json_schema' as const, schema: SCHEMA } },
+      output_config: { effort: (input.effort === 'minimal' ? 'low' : (input.effort ?? 'low')) as 'low' | 'medium' | 'high', format: { type: 'json_schema' as const, schema: SCHEMA } },
     };
     // Sonnet·Opus 는 안전 분류기가 드물게 거절할 때 서버가 다른 모델로 이어서 처리하게 한다(Haiku 는 해당 없음).
     const response = /^claude-(sonnet|opus)-5-5/.test(model)
@@ -136,7 +140,13 @@ async function gemini(model: string, input: ExtractInput) {
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: input.system }] },
       contents: [{ role: 'user', parts }],
-      generationConfig: { responseMimeType: 'application/json', responseJsonSchema: SCHEMA, temperature: 0 },
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseJsonSchema: SCHEMA,
+        temperature: 0,
+        // Gemini 3 계열: 생각 깊이(minimal/low/medium/high). 정하지 않으면 모델 기본값.
+        ...(input.effort ? { thinkingConfig: { thinkingLevel: input.effort } } : {}),
+      },
     }),
   });
   const body = await res.json().catch(() => ({}));
@@ -161,7 +171,7 @@ async function openai(model: string, input: ExtractInput) {
       model,
       instructions: input.system,
       input: [{ role: 'user', content }],
-      reasoning: { effort: 'low' },
+      reasoning: { effort: input.effort ?? 'low' },
       text: { format: { type: 'json_schema', name: 'extraction', strict: true, schema: SCHEMA } },
     }),
   });

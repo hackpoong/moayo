@@ -39,12 +39,13 @@ export function TransferRulesPage() {
 
   return (
     <div className="space-y-4">
-      <SettingsHeader title="이체로 볼 대상" />
+      <SettingsHeader title="우리끼리 이체 대상" />
       <p className="px-1 text-sm leading-relaxed text-muted">
-        가족끼리 보낸 돈, 내 다른 계좌로 옮긴 돈, 카드대금, 페이·지역화폐 충전은 실제로 쓴 돈이 아니라서 지출로 세면 두 번 잡힙니다. 여기 넣어 두면
-        입력할 때 ‘이체’로 바꾸라고 알려 주고, 나중에 문자·알림 자동 입력에서는 바로 이체로 분류합니다.
+        다른 사람에게 보낸 돈은 기본적으로 <b className="text-fg">지출</b>입니다. 다만 가족끼리 보낸 돈, 내 다른 계좌로 옮긴 돈, 카드대금, 페이·지역화폐
+        충전은 실제로 쓴 돈이 아니라서 지출로 세면 두 번 잡힙니다. 이런 돈을 <b className="text-fg">우리끼리 이체</b>로 따로 두고 지출·수입 합계에서 뺍니다.
         <br />
-        부모님 용돈처럼 가계 밖으로 나가는 돈은 지출로 두는 것이 보통입니다.
+        여기 넣어 둔 이름·계좌는 직접 입력할 때 알려 주고, 사진·문자 자동 입력에서는 바로 우리끼리 이체로 분류합니다. 내 계좌 이체·충전·카드대금은
+        넣지 않아도 자동으로 알아봅니다.
       </p>
 
       <form onSubmit={add} className="space-y-3 rounded-2xl bg-surface p-4">

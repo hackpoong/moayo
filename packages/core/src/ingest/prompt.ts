@@ -70,7 +70,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 
 [날짜]
 - 목록 화면은 "14일 토요일" 같은 날짜 머리글 아래 줄들이 그 날짜다. 화면 맨 위에 머리글 없이 시작하는 줄들은, 위쪽 주간 달력에서 동그라미로 강조된 날짜다.
-- 월은 화면 위의 "11월" 같은 표시를 따른다. 연도가 없으면 오늘(${'{TODAY}'})을 넘지 않는 가장 가까운 날짜로 정한다.
+- 월은 화면 위의 "11월" 같은 표시를 따른다. 연도가 없으면 오늘(맨 아래에 적힌 날짜)을 넘지 않는 가장 가까운 날짜로 정한다.
 - 시각이 보이면 time 에 적고, 없으면 null.
 
 [금액]
@@ -103,9 +103,12 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 - 문자·알림: 보통 한 건. 누적·잔액 금액은 amount 가 아니다.
 
 [카테고리]
-category_hint 는 아래 목록에서 가장 알맞은 이름을 그대로 고르고, 알맞은 것이 없거나 이체면 null.
-- 지출: ${'{EXPENSE}'}
-- 수입: ${'{INCOME}'}`
+category_hint 는 아래 목록에서 가장 알맞은 이름을 그대로 고르고, 알맞은 것이 없으면 null.
+
+[이 가족의 정보 — 위 규칙은 늘 같고, 아래만 바뀐다]
+- 오늘: ${'{TODAY}'}
+- 지출 카테고리: ${'{EXPENSE}'}
+- 수입 카테고리: ${'{INCOME}'}`
     .replace('{TODAY}', ctx.today)
     .replace('{EXPENSE}', ctx.expenseCategories.join(', '))
     .replace('{INCOME}', ctx.incomeCategories.join(', '));

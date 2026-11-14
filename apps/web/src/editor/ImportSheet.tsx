@@ -48,7 +48,41 @@ interface Job {
  *  * 아주 긴 캡처(스크롤 캡처, 세로가 가로의 2.6배 넘음): 줄이면 글씨가 뭉개지므로, 위아래로 겹치게 잘라 여러 장으로.
  *    겹친 부분의 같은 줄은 서버에서 이미 있는 내역으로 알아보고 한 번만 넣는다.
  */
-async function prepare(file: File): Promise<Blob[]> {
+/**
+ * 이미지 지문(차이 해시, 256비트). 위쪽 상태 표시줄(시계)은 빼고 계산해서,
+ * 같은 화면을 다시 캡처한 사진은 같은(또는 거의 같은) 지문이 나온다.
+ */
+function fingerprint(canvas: HTMLCanvasElement): string {
+  const W = 17;
+  const H = 16;
+  const skip = Math.round(canvas.height * 0.05);
+  const small = document.createElement('canvas');
+  small.width = W;
+  small.height = H;
+  const ctx = small.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(canvas, 0, skip, canvas.width, canvas.height - skip, 0, 0, W, H);
+  const px = ctx.getImageData(0, 0, W, H).data;
+  const gray = (x: number, y: number) => {
+    const i = (y * W + x) * 4;
+    return px[i]! * 0.299 + px[i + 1]! * 0.587 + px[i + 2]! * 0.114;
+  };
+  let hex = '';
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < 16; x += 4) {
+      let nibble = 0;
+      for (let b = 0; b < 4; b++) nibble = (nibble << 1) | (gray(x + b, y) > gray(x + b + 1, y) ? 1 : 0);
+      hex += nibble.toString(16);
+    }
+  }
+  return hex;
+}
+
+interface Piece {
+  blob: Blob;
+  phash: string;
+}
+
+async function prepare(file: File): Promise<Piece[]> {
   const bitmap = await createImageBitmap(file);
   const { width, height } = bitmap;
   const toJpeg = (sx: number, sy: number, sw: number, sh: number, scale: number) => {
@@ -56,8 +90,8 @@ async function prepare(file: File): Promise<Blob[]> {
     canvas.width = Math.round(sw * scale);
     canvas.height = Math.round(sh * scale);
     canvas.getContext('2d')!.drawImage(bitmap, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-    return new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('이미지를 변환하지 못했습니다.'))), 'image/jpeg', 0.88),
+    return new Promise<Piece>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve({ blob: b, phash: fingerprint(canvas) }) : reject(new Error('이미지를 변환하지 못했습니다.'))), 'image/jpeg', 0.88),
     );
   };
   try {
@@ -68,13 +102,13 @@ async function prepare(file: File): Promise<Blob[]> {
     const scale = Math.min(1, 1100 / width);
     const tile = Math.round(width * 2);
     const step = Math.round(tile * 0.75);
-    const blobs: Blob[] = [];
+    const pieces: Piece[] = [];
     for (let y = 0; y < height; y += step) {
       const h = Math.min(tile, height - y);
-      blobs.push(await toJpeg(0, y, width, h, scale));
+      pieces.push(await toJpeg(0, y, width, h, scale));
       if (y + h >= height) break;
     }
-    return blobs;
+    return pieces;
   } finally {
     bitmap.close();
   }
@@ -135,14 +169,14 @@ export function ImportSheet({ initialMode = 'image', onClose }: { initialMode?: 
         run: async () => {
           const pieces = await prepare(file);
           const total: IngestResult = { read: 0, created: 0, merged: 0, duplicate: 0, review: 0, items: [] };
-          for (const [n, blob] of pieces.entries()) {
+          for (const [n, { blob, phash }] of pieces.entries()) {
             if (pieces.length > 1) update(id, { label: `${name} (${n + 1}/${pieces.length})` });
             update(id, { state: 'uploading' });
             const path = `${household.householdId}/${month}/${id}-${n}.jpg`;
             const { error } = await db().storage.from('inputs').upload(path, blob, { contentType: 'image/jpeg', upsert: true });
             if (error) throw new Error(`올리지 못했습니다: ${error.message}`);
             update(id, { state: 'reading' });
-            const r = await call({ source: 'screenshot', image_path: path });
+            const r = await call({ source: 'screenshot', image_path: path, image_phash: phash });
             total.read += r.read;
             total.created += r.created;
             total.merged += r.merged;
@@ -307,7 +341,7 @@ function JobCard({ job, onRetry }: { job: Job; onRetry: () => void }) {
                       <span className="min-w-0 flex-1 truncate text-sm">
                         {item.merchant ?? '이름 없음'}
                         {item.status === 'canceled' ? <span className="ml-1 text-muted">(취소)</span> : null}
-                        {item.kind === 'transfer' ? <span className="ml-1 text-muted">(이체)</span> : null}
+                        {item.kind === 'transfer' ? <span className="ml-1 text-muted">(우리끼리)</span> : null}
                       </span>
                       <span className="tabular shrink-0 text-xs text-muted">{shortDate(toKstDate(item.occurred_at))}</span>
                       <span className="tabular w-20 shrink-0 text-right text-sm font-semibold">{formatWon(item.amount)}</span>

@@ -11,7 +11,7 @@ export function TxRow({ tx, amount }: { tx: Transaction; amount?: number }) {
   const openEditor = useOpenEditor();
   const firstCat = tx.splits[0]?.category_id ? data.byId.category.get(tx.splits[0].category_id) : null;
   const split = tx.splits.length > 1;
-  const title = tx.merchant || (tx.kind === 'transfer' ? '이체' : (firstCat?.name ?? '미분류'));
+  const title = tx.merchant || (tx.kind === 'transfer' ? '우리끼리 이체' : (firstCat?.name ?? '미분류'));
   const pm = tx.payment_method_id ? data.byId.paymentMethod.get(tx.payment_method_id) : null;
   const member = tx.member_id ? data.byId.member.get(tx.member_id) : null;
   const sub = [

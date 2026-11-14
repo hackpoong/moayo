@@ -89,7 +89,7 @@ export function Stats() {
       </div>
       {t.transfer ? (
         <p className="px-1 text-xs text-muted">
-          이체 {formatWon(t.transfer)}는 지출·수입 합계에서 뺐습니다(가족 송금, 카드대금, 충전 등).
+          우리끼리 이체 {formatWon(t.transfer)}는 지출·수입 합계에서 뺐습니다(가족끼리 송금, 내 계좌 간 이체, 카드대금, 충전).
         </p>
       ) : null}
 

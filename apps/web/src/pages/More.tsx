@@ -27,7 +27,7 @@ const SETTINGS: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/more/payment-methods', label: '결제수단', icon: CreditCard },
   { to: '/more/categories', label: '카테고리', icon: LayoutGrid },
   { to: '/more/tags', label: '태그', icon: Hash },
-  { to: '/more/transfer-rules', label: '이체로 볼 대상', icon: ArrowLeftRight },
+  { to: '/more/transfer-rules', label: '우리끼리 이체 대상', icon: ArrowLeftRight },
   { to: '/more/export', label: '내보내기·백업', icon: Download },
   { to: '/more/ai-usage', label: 'AI 사용량·비용', icon: Sparkles },
 ];

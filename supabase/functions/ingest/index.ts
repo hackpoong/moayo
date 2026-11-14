@@ -5,6 +5,7 @@
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.119.0';
 import {
   buildSystemPrompt,
+  extractionIssues,
   maskSensitive,
   matchCandidates,
   normalizeExtraction,
@@ -20,12 +21,17 @@ import {
   type TransactionSource,
   type TransferRule,
 } from '../_shared/core/index.ts';
-import { extract, ExtractError, type ExtractOutput, type Provider } from './providers.ts';
+import { extract, ExtractError, type Effort, type ExtractOutput, type Provider } from './providers.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const DEFAULT_PROVIDER = (Deno.env.get('AI_PROVIDER') ?? 'anthropic') as Provider;
 const DEFAULT_MODEL = Deno.env.get('AI_MODEL') ?? 'claude-haiku-5-5';
+const DEFAULT_EFFORT = (Deno.env.get('AI_EFFORT') || undefined) as Effort | undefined;
+// 싼 모델을 먼저 쓰고, 결과가 미심쩍을 때만 위의 모델로 다시 읽는다(비워 두면 처음부터 위 모델).
+const FAST_PROVIDER = (Deno.env.get('AI_PROVIDER_FAST') || Deno.env.get('AI_PROVIDER') || 'anthropic') as Provider;
+const FAST_MODEL = Deno.env.get('AI_MODEL_FAST') || null;
+const FAST_EFFORT = (Deno.env.get('AI_EFFORT_FAST') || undefined) as Effort | undefined;
 const DAILY_AI_LIMIT = Number(Deno.env.get('DAILY_AI_LIMIT') ?? '300');
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -43,7 +49,24 @@ interface IngestBody {
   image_path?: string;
   received_at?: string;
   app_package?: string;
+  /** 앱이 계산한 이미지 지문(256비트, 16진수). 거의 같은 사진을 다시 올리면 AI 를 다시 부르지 않는다. */
+  image_phash?: string;
 }
+
+/** 16진수 지문 두 개의 다른 비트 수. */
+function hamming(a: string, b: string): number {
+  if (a.length !== b.length) return Infinity;
+  let d = 0;
+  for (let i = 0; i < a.length; i += 8) {
+    let x = parseInt(a.slice(i, i + 8), 16) ^ parseInt(b.slice(i, i + 8), 16);
+    while (x) {
+      d += x & 1;
+      x >>>= 1;
+    }
+  }
+  return d;
+}
+const PHASH_MAX_DISTANCE = 6;
 
 function cors(req: Request): Record<string, string> {
   const origin = req.headers.get('origin') ?? '';
@@ -170,6 +193,7 @@ async function ingest(admin: SupabaseClient, body: IngestBody, userId: string, m
       app_package: body.app_package ?? null,
       received_at: body.received_at ?? new Date().toISOString(),
       content_hash: hash,
+      image_phash: body.image_phash && /^[0-9a-f]{64}$/.test(body.image_phash) ? body.image_phash : null,
       created_by: userId,
     });
     if (error) throw new Error(`원문 저장 실패: ${error.message}`);
@@ -199,6 +223,25 @@ async function ingest(admin: SupabaseClient, body: IngestBody, userId: string, m
     let parser = 'rule:sms';
     let ai: ExtractOutput | null = null;
     if (!image && body.text) extraction = parseSms(body.text, today);
+
+    // 거의 같은 사진(같은 화면을 다시 캡처해 시계만 다른 경우 등)은 예전에 읽은 결과를 다시 쓴다.
+    if (!extraction && image && body.image_phash && /^[0-9a-f]{64}$/.test(body.image_phash)) {
+      const { data: recent } = await admin
+        .from('raw_inputs')
+        .select('id, image_phash, extraction')
+        .eq('household_id', householdId)
+        .eq('status', 'done')
+        .not('image_phash', 'is', null)
+        .neq('id', rawId)
+        .order('created_at', { ascending: false })
+        .limit(500);
+      const twin = (recent ?? []).find((r) => r.extraction && hamming(r.image_phash as string, body.image_phash!) <= PHASH_MAX_DISTANCE);
+      if (twin) {
+        extraction = twin.extraction as Extraction;
+        parser = `reuse:${twin.id}`;
+      }
+    }
+
     if (!extraction) {
       const { count } = await admin
         .from('raw_inputs')
@@ -213,11 +256,8 @@ async function ingest(admin: SupabaseClient, body: IngestBody, userId: string, m
         expenseCategories: categories.filter((c) => c.kind === 'expense' && !c.archived).map((c) => c.name),
         incomeCategories: categories.filter((c) => c.kind === 'income' && !c.archived).map((c) => c.name),
       });
-      ai = await extract(DEFAULT_PROVIDER, DEFAULT_MODEL, {
-        system,
-        instruction: image ? USER_INSTRUCTION_IMAGE : USER_INSTRUCTION_TEXT + maskSensitive(body.text!),
-        image,
-      });
+      const input = { system, instruction: image ? USER_INSTRUCTION_IMAGE : USER_INSTRUCTION_TEXT + maskSensitive(body.text!), image };
+      ai = await readWithCascade(input, today, !!image);
       extraction = ai.extraction;
       parser = `llm:${ai.provider}`;
     }
@@ -331,6 +371,30 @@ function summarize(decisions: Decision[], extraction: Extraction, parser: string
   };
 }
 
+// ── 싼 모델 먼저, 미심쩍으면 정확한 모델로 ─────────────────────────────────
+async function readWithCascade(input: { system: string; instruction: string; image?: { mime: string; b64: string } }, today: string, isImage: boolean): Promise<ExtractOutput> {
+  if (!FAST_MODEL) return extract(DEFAULT_PROVIDER, DEFAULT_MODEL, { ...input, effort: DEFAULT_EFFORT });
+  let first: ExtractOutput | null = null;
+  try {
+    first = await extract(FAST_PROVIDER, FAST_MODEL, { ...input, effort: FAST_EFFORT });
+    if (extractionIssues(first.extraction, today, { isImage }).length === 0) return first;
+  } catch (e) {
+    console.warn('fast model failed, escalating', e instanceof Error ? e.message : e);
+  }
+  const second = await extract(DEFAULT_PROVIDER, DEFAULT_MODEL, { ...input, effort: DEFAULT_EFFORT });
+  if (!first) return second;
+  return {
+    ...second,
+    model: `${first.model}→${second.model}`,
+    usage: {
+      input_tokens: first.usage.input_tokens + second.usage.input_tokens,
+      output_tokens: first.usage.output_tokens + second.usage.output_tokens,
+    },
+    cost_usd: first.cost_usd !== null && second.cost_usd !== null ? first.cost_usd + second.cost_usd : null,
+    ms: first.ms + second.ms,
+  };
+}
+
 // ── 평가: 같은 이미지를 여러 업체·모델로 읽어 비교한다(DB 는 건드리지 않음) ──────
 async function handleEval(req: Request): Promise<Response> {
   const body = (await req.json()) as {
@@ -342,6 +406,7 @@ async function handleEval(req: Request): Promise<Response> {
     today: string;
     expense_categories?: string[];
     income_categories?: string[];
+    effort?: Effort;
   };
   try {
     const system = buildSystemPrompt({
@@ -353,6 +418,7 @@ async function handleEval(req: Request): Promise<Response> {
       system,
       instruction: body.image_b64 ? USER_INSTRUCTION_IMAGE : USER_INSTRUCTION_TEXT + maskSensitive(body.text ?? ''),
       image: body.image_b64 ? { mime: body.mime ?? 'image/jpeg', b64: body.image_b64 } : undefined,
+      effort: body.effort,
     });
     return json(req, 200, out);
   } catch (e) {

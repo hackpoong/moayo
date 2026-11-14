@@ -51,8 +51,9 @@ const models = (arg('models', 'anthropic:claude-haiku-5-5,anthropic:claude-sonne
   .map((s) => s.trim())
   .filter(Boolean)
   .map((s) => {
-    const [provider, model] = s.split(':');
-    return { provider: provider!, model: model! };
+    const [provider, rest] = s.split(':');
+    const [model, effort] = rest!.split('@');
+    return { provider: provider!, model: model!, effort: effort ?? null };
   });
 const FUNCTION_URL = process.env.FUNCTION_URL!;
 const EVAL_KEY = process.env.EVAL_KEY!;
@@ -74,12 +75,13 @@ interface Call {
   error?: string;
 }
 
+let currentEffort: string | null = null;
 async function callOnce(provider: string, model: string, file: string): Promise<Call> {
   const b64 = readFileSync(file).toString('base64');
   const res = await fetch(FUNCTION_URL, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-eval-key': EVAL_KEY },
-    body: JSON.stringify({ provider, model, image_b64: b64, mime: 'image/jpeg', today: '2026-11-14', expense_categories: EXPENSE, income_categories: INCOME }),
+    body: JSON.stringify({ provider, model, image_b64: b64, mime: 'image/jpeg', today: '2026-11-14', expense_categories: EXPENSE, income_categories: INCOME, ...(currentEffort ? { effort: currentEffort } : {}) }),
   });
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) return { extraction: null, error: String(body.error ?? res.status) };
@@ -199,8 +201,9 @@ const truthExtraction = (img: TruthImage): Extraction => ({
 const expectedLedger = ledger(truth.map(truthExtraction));
 
 const report: Record<string, unknown>[] = [];
-for (const { provider, model } of models) {
-  const label = `${provider}:${model}`;
+for (const { provider, model, effort } of models) {
+  currentEffort = effort;
+  const label = `${provider}:${model}${effort ? `@${effort}` : ''}`;
   const cacheFile = join(outDir, `${label.replace(/[:/]/g, '_')}.json`);
   let calls: Call[];
   if (existsSync(cacheFile)) calls = JSON.parse(readFileSync(cacheFile, 'utf8'));
