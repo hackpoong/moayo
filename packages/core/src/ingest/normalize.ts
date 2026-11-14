@@ -5,10 +5,10 @@
 //  * 결제수단 이름을 가족의 결제수단에 연결하고, 카테고리는 같은 가맹점의 예전 기록을 우선한다.
 
 import { fromKst } from '../kst.ts';
-import { matchTransferRule } from '../rules.ts';
-import type { Category, PaymentMethod, Transaction, TransactionSource, TransferRule } from '../types.ts';
+import { matchTransferRule, memberTransferRules } from '../rules.ts';
+import type { Category, Member, PaymentMethod, Transaction, TransactionSource, TransferRule } from '../types.ts';
 import { isWrapperLabel, merchantSimilarity, normalizeMerchant } from './text.ts';
-import type { Candidate, ExtractedItem, Extraction } from './types.ts';
+import type { Candidate, ExtractedItem, Extraction, SourceKind } from './types.ts';
 
 export interface NormalizeContext {
   source: TransactionSource;
@@ -19,6 +19,43 @@ export interface NormalizeContext {
   history: Pick<Transaction, 'merchant' | 'splits' | 'kind' | 'deleted_at'>[];
   /** 원문에 날짜가 없을 때 쓸 날짜(받은 날). */
   fallbackDate: string;
+  /** 구성원의 '이체로 볼 이름'(실명 등). 이 이름과 주고받은 돈은 이체다. */
+  members?: Pick<Member, 'id' | 'household_id' | 'display_name' | 'emoji' | 'aliases' | 'deleted_at'>[];
+}
+
+const SOURCE_KIND_LABEL: Record<SourceKind, string> = {
+  toss_list: '토스 캡처',
+  local_currency_app: '지역화폐 앱 캡처',
+  receipt: '영수증',
+  card_statement: '카드 명세서',
+  pay_history: '페이 앱 캡처',
+  bank_app: '은행 앱 캡처',
+  sms: '문자',
+  push: '알림',
+  other: '캡처',
+};
+
+const won = (n: number) => `${Math.round(n).toLocaleString('ko-KR')}원`;
+
+/**
+ * 불러온 내역의 메모: 원문에서 읽은 정보를 줄마다 적어 둔다(값이 있는 줄만).
+ * 제목을 바꿔도 원래 업체명이 남는다.
+ */
+export function importMemo(item: ExtractedItem, merchant: string, sourceKind: SourceKind, amount: number): string | null {
+  const lines: string[] = [];
+  if (item.memo?.trim()) lines.push(item.memo.trim());
+  lines.push(`업체명 : ${merchant}`);
+  const pay = [item.payment_label?.trim(), item.card_last4 ? `끝자리 ${item.card_last4}` : null].filter(Boolean).join(' · ');
+  if (pay) lines.push(`결제 : ${pay}`);
+  const approval = [item.approval_no ? `승인 ${item.approval_no}` : null, (item.installment_months ?? 1) > 1 ? `${item.installment_months}개월 할부` : null]
+    .filter(Boolean)
+    .join(' · ');
+  if (approval) lines.push(approval);
+  if (item.original_amount && Math.round(item.original_amount) !== amount)
+    lines.push(`원래 금액 : ${won(item.original_amount)}${item.status === 'partial_canceled' ? ' (부분취소)' : ''}`);
+  if (item.foreign_currency && item.foreign_amount) lines.push(`해외 : ${item.foreign_amount} ${item.foreign_currency}`);
+  lines.push(`출처 : ${SOURCE_KIND_LABEL[sourceKind]}`);
+  return lines.join('\n').slice(0, 500) || null;
 }
 
 const compact = (s: string) => s.toLowerCase().replace(/[\s()[\]·.\-_/]/g, '');
@@ -89,6 +126,7 @@ function categoryFor(merchant: string, kind: Candidate['kind'], hint: string | n
 
 export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContext): Candidate[] {
   const candidates: Candidate[] = [];
+  const rules = [...ctx.transferRules, ...memberTransferRules(ctx.members ?? [])];
   extraction.items.forEach((item, index) => {
     if (item.status === 'declined') return;
     const amount = Math.round(Math.abs(item.amount));
@@ -99,7 +137,7 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
     const notes: string[] = [];
     // 회색 표시('소비 아님')는 토스·은행 앱 목록에서만 의미가 있다. 페이 앱·영수증의 흐린 글씨는 무시한다.
     const trustGrey = ['toss_list', 'bank_app', 'other'].includes(extraction.source_kind);
-    const { kind, note } = decideKind(item, ctx.transferRules, trustGrey);
+    const { kind, note } = decideKind(item, rules, trustGrey);
     if (note) notes.push(note);
     if (item.status === 'partial_canceled') notes.push(`부분취소 (원래 ${item.original_amount ?? '?'}원)`);
     if (item.foreign_currency && item.foreign_amount) notes.push(`해외 결제 ${item.foreign_amount} ${item.foreign_currency}`);
@@ -119,10 +157,7 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
       has_time: !!time,
       date,
       merchant,
-      memo: [item.memo?.trim(), ...(item.foreign_currency && item.foreign_amount ? [`${item.foreign_amount} ${item.foreign_currency}`] : [])]
-        .filter(Boolean)
-        .join(' · ')
-        .slice(0, 200) || null,
+      memo: importMemo(item, merchant, extraction.source_kind, amount),
       payment_method_id: method?.id ?? null,
       payment_label: item.payment_label?.trim() || null,
       card_last4: item.card_last4,
@@ -183,6 +218,7 @@ function collapsePairs(cands: Candidate[], methods: readonly PaymentMethod[]): C
       dropped.add(u.index);
       used.add(local.index);
       local.notes.push(`캐시백을 뺀 잔액 차감 줄(${u.amount}원)은 같은 결제라 뺐습니다`);
+      local.memo = [local.memo, `실제 차감 : ${won(u.amount)} (캐시백 ${won(local.amount - u.amount)})`].filter(Boolean).join('\n');
       continue;
     }
     // 2) 같은 금액 두 줄

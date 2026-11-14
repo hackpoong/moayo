@@ -7,6 +7,7 @@ import {
   fromKst,
   hasOperator,
   matchTransferRule,
+  memberTransferRules,
   splitsAreValid,
   suggestFromTitle,
   titleSuggestions,
@@ -110,7 +111,8 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   const member = effectiveMemberId ? (data.byId.member.get(effectiveMemberId) ?? null) : null;
   const isCredit = paymentMethod?.type === 'credit_card';
   const cashDate = original?.cash_date_override ? original.cash_date : computeCashDate(date, paymentMethod);
-  const transferHint = kind !== 'transfer' ? matchTransferRule([title, memo], data.transferRules) : null;
+  const allTransferRules = useMemo(() => [...data.transferRules, ...memberTransferRules(data.members)], [data.transferRules, data.members]);
+  const transferHint = kind !== 'transfer' ? matchTransferRule([title, memo], allTransferRules) : null;
   const category = categoryId ? data.byId.category.get(categoryId) : null;
 
   const finalSplits: Split[] =
@@ -310,6 +312,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         selectedId={effectivePmId}
         onPick={pickAsset}
         onNextMember={nextMember}
+        nextMember={activeMembers.length > 1 ? (activeMembers[(activeMembers.findIndex((m) => m.id === viewingMember?.id) + 1) % activeMembers.length] ?? null) : null}
         onAdd={() => setAdding('asset')}
         onClose={() => openPanel(null)}
       />
@@ -572,14 +575,15 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
           </div>
 
           {/* 7) 메모 */}
-          <input
+          <textarea
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             onFocus={() => setPanel(null)}
-            maxLength={200}
+            maxLength={500}
+            rows={Math.min(6, Math.max(1, memo.split('\n').length))}
             placeholder="메모"
             aria-label="메모"
-            className="h-11 w-full border-b border-line bg-transparent text-base outline-none placeholder:text-muted/60 focus:border-brand"
+            className="block w-full resize-none border-b border-line bg-transparent py-2.5 text-base leading-relaxed outline-none placeholder:text-muted/60 focus:border-brand"
           />
 
           {original && original.source !== 'manual' ? (

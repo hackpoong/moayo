@@ -27,10 +27,15 @@ export interface Household {
 export type MemberRole = 'owner' | 'member';
 
 export interface Member extends SyncedRow {
-  user_id: Uuid;
+  /** 아직 가입하지 않은(계정 없는) 구성원은 null. */
+  user_id: Uuid | null;
   display_name: string;
   role: MemberRole;
   color: string | null;
+  /** 이름 앞 표시(💛, 💙 …). */
+  emoji: string | null;
+  /** 이 이름으로 보내거나 받은 돈은 이체(지출·수입 아님)로 본다. 실명 등. */
+  aliases: string[];
 }
 
 export const PAYMENT_METHOD_TYPES = [

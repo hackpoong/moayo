@@ -1,6 +1,6 @@
 // 이체 규칙: 받는 사람·적요·계좌가 규칙에 맞으면 '이체'로 본다(가족 송금, 본인 계좌 이체, 카드대금, 충전 등).
 
-import type { TransferRule } from './types.ts';
+import type { Member, TransferRule } from './types.ts';
 
 const normalize = (s: string) => s.toLowerCase().replace(/[\s\-_.()[\]]/g, '');
 
@@ -32,4 +32,30 @@ export function matchTransferRule(
     if (hit) return rule;
   }
   return null;
+}
+
+/**
+ * 구성원의 '이체로 볼 이름'(실명 등)을 이체 규칙으로 바꾼다.
+ * 두 사람끼리 주고받은 돈은 지출·수입이 아니라 이체다.
+ */
+export function memberTransferRules(members: readonly Pick<Member, 'id' | 'household_id' | 'display_name' | 'emoji' | 'aliases' | 'deleted_at'>[]): TransferRule[] {
+  const out: TransferRule[] = [];
+  for (const m of members) {
+    if (m.deleted_at) continue;
+    for (const name of m.aliases ?? []) {
+      if (normalize(name).length < 2) continue;
+      out.push({
+        id: `member-${m.id}-${name}`,
+        household_id: m.household_id,
+        created_at: '',
+        updated_at: '',
+        deleted_at: null,
+        label: `${m.emoji ?? ''}${m.display_name}`,
+        match_type: 'name',
+        pattern: name,
+        enabled: true,
+      });
+    }
+  }
+  return out;
 }

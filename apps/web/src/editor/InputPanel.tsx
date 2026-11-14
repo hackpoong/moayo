@@ -8,7 +8,7 @@ import {
   type PaymentMethod,
   type PaymentMethodType,
 } from '@moayo/core';
-import { ChevronDown, Delete, Pencil, Scissors, Sparkles, UserRoundCog } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown, Delete, Pencil, Scissors, Sparkles } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { MemberBadge } from '../components/MemberBadge.tsx';
 import { haptic } from '../lib/flash.ts';
@@ -171,6 +171,7 @@ export function AssetPanel({
   selectedId,
   onPick,
   onNextMember,
+  nextMember,
   onAdd,
   onClose,
 }: {
@@ -180,6 +181,8 @@ export function AssetPanel({
   selectedId: string | null;
   onPick: (pm: PaymentMethod) => void;
   onNextMember: () => void;
+  /** 바꾸기를 누르면 보게 될 사람. */
+  nextMember?: Member | null;
   onAdd: () => void;
   onClose: () => void;
 }) {
@@ -207,8 +210,8 @@ export function AssetPanel({
         <>
           {members.length > 1 ? (
             <BarButton label="다른 사람 자산 보기" onClick={onNextMember}>
-              <UserRoundCog className="size-5" aria-hidden />
-              바꾸기
+              <ArrowLeftRight className="size-4" aria-hidden />
+              {nextMember ? `${nextMember.emoji ?? ''}${nextMember.display_name}` : '바꾸기'}
             </BarButton>
           ) : null}
           <BarButton label="자산 추가" onClick={onAdd}>

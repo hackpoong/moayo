@@ -37,7 +37,8 @@ grant execute on all functions in schema test to anon, authenticated;
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'alice@example.com'),
   ('00000000-0000-0000-0000-00000000000b', 'bob@example.com'),
-  ('00000000-0000-0000-0000-00000000000c', 'carol@example.com');
+  ('00000000-0000-0000-0000-00000000000c', 'carol@example.com'),
+  ('00000000-0000-0000-0000-00000000000d', 'dana@example.com');
 
 \set alice '00000000-0000-0000-0000-00000000000a'
 \set bob   '00000000-0000-0000-0000-00000000000b'
@@ -124,7 +125,8 @@ select test.ok(test.affected(format($$update public.households set name = '밥�
 update public.members set display_name = '밥이' where user_id = auth.uid();
 select test.ok((select display_name from public.members where user_id = :'bob') = '밥이', '밥: 자기 표시 이름 변경 가능');
 select test.ok(test.affected(format(
-  $$update public.members set display_name = 'x' where user_id = %L$$, :'alice')) = 0, '밥: 남의 표시 이름 변경 불가');
+  $$update public.members set emoji = '💙' where user_id = %L$$, :'alice')) = 1, '밥: 같은 가족 구성원 표시(이모지) 변경 가능');
+select test.ok(test.throws(format($$update public.members set role = 'member' where user_id = %L$$, :'alice')), '밥: 남의 역할 변경 불가');
 
 -- 밥이 넣은 내역이 앨리스에게 보인다
 insert into public.transactions (id, household_id, kind, amount, occurred_at, cash_date)
@@ -193,6 +195,27 @@ select test.ok(test.throws($$update public.raw_inputs set raw_text = 'x'$$), '�
 select test.login(:'carol');
 select test.ok((select count(*) from public.raw_inputs) = 0, '캐럴: 다른 가족 원문 안 보임');
 select test.login(:'alice');
+
+-- ── 계정 없는 구성원(은주 자리) → 그 자리 초대로 연결 ──────────────────────
+select test.login(:'alice');
+select public.create_placeholder_member(:'ha', '은주', '💛', '#eab308') as ph \gset
+select test.ok((select user_id is null from public.members where id = :'ph'), '계정 없는 구성원 생성');
+update public.members set aliases = array['가나다'] where id = :'ph';
+select test.ok((select aliases[1] from public.members where id = :'ph') = '가나다', '계정 없는 구성원의 이체 이름 저장');
+insert into public.payment_methods (household_id, name, type, owner_member_id) values (:'ha', '은주 카드', 'credit_card', :'ph');
+select test.login(:'carol');
+select test.ok(test.throws(format($$select public.create_placeholder_member(%L, 'x')$$, :'ha')), '캐럴: 다른 가족에 구성원 추가 불가');
+select test.ok(test.throws(format($$select * from public.create_member_invite(%L, %L)$$, :'ha', :'ph')), '캐럴: 다른 가족 자리 초대 불가');
+select test.login(:'alice');
+select code as seat_code from public.create_member_invite(:'ha', :'ph') \gset
+select test.login('00000000-0000-0000-0000-00000000000d');
+select test.ok((select member_name from public.preview_invite(:'seat_code')) = '은주', '자리 초대 미리보기: 들어갈 이름');
+select test.ok(public.accept_invite(:'seat_code', '아무이름') = :'ha', '데이나: 자리 초대로 합류');
+select test.ok((select count(*) from public.members where household_id = :'ha' and display_name = '은주' and user_id = '00000000-0000-0000-0000-00000000000d') = 1,
+  '합류하면 새 구성원이 아니라 은주 자리에 계정이 연결됨');
+select test.ok((select count(*) from public.payment_methods where owner_member_id = :'ph') = 1, '은주 자리의 자산이 그대로 이어짐');
+select test.login(:'alice');
+select test.ok(test.throws(format($$select * from public.create_member_invite(%L, %L)$$, :'ha', :'ph')), '이미 연결된 자리는 다시 초대 불가');
 
 reset role;
 \echo 'ALL DB TESTS PASSED'

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { toKstDate, toKstTime } from '../kst.ts';
 import { makeRule, makeTx } from '../testkit.ts';
 import type { Category, PaymentMethod, Transaction } from '../types.ts';
-import { matchCandidates, type Decision } from './match.ts';
+import { appendMemoLines, matchCandidates, type Decision } from './match.ts';
 import { normalizeExtraction, resolvePaymentMethod, type NormalizeContext } from './normalize.ts';
 import { parseSms } from './sms.ts';
 import { maskSensitive, merchantSimilarity } from './text.ts';
@@ -496,7 +496,7 @@ describe('parseSms', () => {
   });
 });
 
-describe('우리끼리 이체 양쪽 기록', () => {
+describe('이체 양쪽 기록', () => {
   it('은행 쪽 충전과 지역화폐 앱 쪽 충전은 하나', () => {
     const db = ingest([], extraction([{ date: '2026-11-01', merchant: '코나아이 충전', amount: 300000, greyed: true, payment_label: '하나 → 여민전' }])).db;
     const r = ingest(db, extraction([{ date: '2026-11-01', time: '10:16', merchant: '여민전 충전', amount: 300000, kind: 'income', payment_label: '여민전' }], 'local_currency_app'));
@@ -544,5 +544,45 @@ describe('온통대전', () => {
   it("'온통대전 충전'은 우리끼리 이체", () => {
     const cands = normalizeExtraction(extraction([{ merchant: '온통대전 충전', amount: 300000, payment_label: '온통대전 꿈돌이카드' }], 'local_currency_app'), ctx());
     expect(cands[0]!.kind).toBe('transfer');
+  });
+});
+
+describe('두 사람끼리 주고받은 돈', () => {
+  const people = [
+    { id: 'm-a', household_id: 'h', display_name: '은주', emoji: '💛', aliases: ['가나다'], deleted_at: null },
+    { id: 'm-b', household_id: 'h', display_name: '성욱', emoji: '💙', aliases: ['라마바'], deleted_at: null },
+  ];
+  it('구성원의 이체 이름으로 보낸 돈·받은 돈은 이체, 다른 사람에게 보낸 돈은 지출', () => {
+    const cands = normalizeExtraction(
+      extraction([
+        { merchant: '가나다', amount: 50000 },
+        { merchant: '라마바', amount: 30000, kind: 'income' },
+        { merchant: '홍길동', amount: 20000 },
+      ]),
+      ctx({ members: people }),
+    );
+    expect(cands.map((c) => c.kind)).toEqual(['transfer', 'transfer', 'expense']);
+    expect(cands[0]!.notes.join()).toContain('💛은주');
+  });
+});
+
+describe('불러온 내역의 메모', () => {
+  it('업체명·결제·승인·출처를 줄마다 적는다', () => {
+    const [c] = normalizeExtraction(
+      extraction([{ merchant: '에브리포터블', amount: 1600, payment_label: '카카오페이', approval_no: '12345678', installment_months: 3 }]),
+      ctx(),
+    );
+    expect(c!.memo!.split('\n')).toEqual(['업체명 : 에브리포터블', '결제 : 카카오페이', '승인 12345678 · 3개월 할부', '출처 : 토스 캡처']);
+  });
+  it('AI 가 읽은 메모는 맨 위, 해외 결제·원래 금액도 남긴다', () => {
+    const [c] = normalizeExtraction(
+      extraction([{ merchant: 'APPLE', amount: 15000, original_amount: 16000, foreign_currency: 'USD', foreign_amount: 10.99, memo: '구독' }], 'card_statement'),
+      ctx(),
+    );
+    expect(c!.memo!.split('\n')).toEqual(['구독', '업체명 : APPLE', '원래 금액 : 16,000원', '해외 : 10.99 USD', '출처 : 카드 명세서']);
+  });
+  it('메모 줄 덧붙이기는 없는 줄만', () => {
+    expect(appendMemoLines('업체명 : A\n결제 : B', '결제 : B\n승인 1')).toBe('업체명 : A\n결제 : B\n승인 1');
+    expect(appendMemoLines(null, null)).toBeNull();
   });
 });

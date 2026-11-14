@@ -5,7 +5,7 @@ import { defaultDisplayName, useSession } from '../lib/authContext.ts';
 import { useHouseholds } from '../lib/householdContext.ts';
 import { db, describeError } from '../lib/supabase.ts';
 
-type Preview = { status: 'loading' } | { status: 'invalid' } | { status: 'valid'; householdName: string };
+type Preview = { status: 'loading' } | { status: 'invalid' } | { status: 'valid'; householdName: string; memberName: string | null };
 
 /** 초대 링크(/join/코드)로 들어온 화면. 어느 가족인지 보여 주고 합류한다. */
 export function Join() {
@@ -26,11 +26,11 @@ export function Join() {
       .rpc('preview_invite', { p_code: code })
       .then(({ data, error: rpcError }) => {
         if (!active) return;
-        const row = (data as { household_name: string; valid: boolean }[] | null)?.[0];
+        const row = (data as { household_name: string; valid: boolean; member_name: string | null }[] | null)?.[0];
         if (rpcError) setError(describeError(rpcError));
         setLoaded({
           code,
-          preview: row?.valid ? { status: 'valid', householdName: row.household_name } : { status: 'invalid' },
+          preview: row?.valid ? { status: 'valid', householdName: row.household_name, memberName: row.member_name ?? null } : { status: 'invalid' },
         });
       });
     return () => {
@@ -44,7 +44,7 @@ export function Join() {
     setError(null);
     const { data, error: rpcError } = await db().rpc('accept_invite', {
       p_code: code,
-      p_display_name: displayName.trim(),
+      p_display_name: displayName.trim() || '나',
     });
     if (rpcError) {
       setError(describeError(rpcError));
@@ -80,9 +80,11 @@ export function Join() {
       <div>
         <p className="text-muted">초대를 받았습니다</p>
         <h1 className="mt-1 text-2xl font-bold">‘{preview.householdName}’ 가계부에 합류할까요?</h1>
+        {preview.memberName ? <p className="mt-2 text-muted">{preview.memberName}님 자리로 들어갑니다. 미리 넣어 둔 자산·내역이 그대로 이어집니다.</p> : null}
       </div>
       <Card>
         <form onSubmit={accept} className="space-y-4">
+          {preview.memberName ? null : (
           <Field
             label="내 이름"
             hint="가족에게 보이는 이름입니다. 예: 엄마, 아빠, 지우"
@@ -91,8 +93,9 @@ export function Join() {
             maxLength={20}
             required
           />
+          )}
           <ErrorNote>{error}</ErrorNote>
-          <Button type="submit" block busy={busy} disabled={!displayName.trim()}>
+          <Button type="submit" block busy={busy} disabled={!preview.memberName && !displayName.trim()}>
             합류하기
           </Button>
         </form>

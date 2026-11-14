@@ -315,7 +315,7 @@ function createTx(c: Candidate, ctx: MatchContext, suspect: Transaction | null):
     cash_date: computeCashDate(c.date, method),
     cash_date_override: false,
     merchant: c.merchant,
-    memo: [c.memo, ...c.notes.filter((n) => n.startsWith('부분취소'))].filter(Boolean).join(' · ') || null,
+    memo: c.memo,
     payment_method_id: c.payment_method_id,
     member_id: method?.owner_member_id ?? ctx.memberId,
     installment_months: method?.type === 'credit_card' ? c.installment_months : 1,
@@ -331,6 +331,13 @@ function createTx(c: Candidate, ctx: MatchContext, suspect: Transaction | null):
     payment_label: c.payment_label,
     review: suspect ? { reason: `${describe(suspect)}와 같은 결제일 수 있어요`, duplicate_of: suspect.id } : null,
   };
+}
+
+/** 메모에 없는 줄만 덧붙인다(줄 단위). */
+export function appendMemoLines(memo: string | null, add: string | null): string | null {
+  const have = (memo ?? '').split('\n').filter(Boolean);
+  const extra = (add ?? '').split('\n').filter((l) => l && !have.includes(l));
+  return [...have, ...extra].join('\n').slice(0, 500) || null;
 }
 
 function merge(c: Candidate, t: Transaction, ctx: MatchContext, score: number | null, opts: { correctAmount: boolean }): Decision {
@@ -349,13 +356,13 @@ function merge(c: Candidate, t: Transaction, ctx: MatchContext, score: number | 
   const tWrap = isWrapperLabel(t.payment_label);
   if (cWrap && !tWrap && c.merchant && (merchantSimilarity(c.merchant, t.merchant) ?? 0) < 0.6 && !isUserOwned(t) && !(t.memo ?? '').includes(c.merchant)) {
     // 페이 앱의 실제 가게·상품 이름을 메모로 남긴다(카드에는 결제대행사 이름만 찍히는 경우가 많다).
-    set('memo', [t.memo, `${c.payment_label}: ${c.merchant}`].filter(Boolean).join(' · ').slice(0, 200));
+    set('memo', appendMemoLines(t.memo, `${c.payment_label}: ${c.merchant}`));
   }
   if (tWrap && !cWrap && (c.payment_label || c.payment_method_id) && !isUserOwned(t)) {
     // 먼저 들어온 페이 앱 내역에, 실제로 돈이 나간 카드·계좌를 채운다.
     if (c.payment_label) set('payment_label', c.payment_label);
     if (c.merchant && (merchantSimilarity(c.merchant, t.merchant) ?? 0) < 0.6 && !(t.memo ?? '').includes(t.merchant ?? '')) {
-      set('memo', [t.memo, `${t.payment_label}: ${t.merchant}`].filter(Boolean).join(' · ').slice(0, 200));
+      set('memo', appendMemoLines(t.memo, `${t.payment_label}: ${t.merchant}`));
     }
   } else if (!t.payment_label && c.payment_label) set('payment_label', c.payment_label);
   if (!t.payment_method_id && c.payment_method_id) {
@@ -386,6 +393,11 @@ function merge(c: Candidate, t: Transaction, ctx: MatchContext, score: number | 
     }
   }
 
+  // 불러온 내역끼리 맞춰질 때: 메모에 빠진 원문 정보(업체명·결제·승인번호 등) 줄만 덧붙인다.
+  if (editable && c.memo && (filled.length > 0 || !(next.memo ?? '').includes('업체명 :'))) {
+    const memo = appendMemoLines(next.memo, c.memo);
+    if (memo !== next.memo) set('memo', memo);
+  }
   const changed = filled.length > 0;
   if (changed) next.updated_at = ctx.now;
   return {
