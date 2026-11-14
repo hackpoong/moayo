@@ -196,7 +196,8 @@ export function ImportSheet({
     const targets = result.items.filter((it) => it.action === 'created' || it.action === 'merged' || it.action === 'review');
     if (targets.length !== 1 || !(camera || result.source_kind === 'receipt')) return;
     const txId = targets[0]!.transaction_id;
-    const photo = await preparePhoto(file, household.householdId, txId);
+    // 영수증은 배경을 잘라 종이 부분만(여백 넉넉히) 남긴다.
+    const photo = await preparePhoto(file, household.householdId, txId, { cropPaper: true });
     // 방금 서버가 만든 내역이 기기에 내려올 때까지 잠깐 기다린다.
     let tx: Transaction | undefined;
     for (let i = 0; i < 40 && !tx; i++) {
