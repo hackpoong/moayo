@@ -18,6 +18,9 @@
   --app-chart-expense: #e5484d;
   --app-chart-income: #2f6fed;
   --app-chart-grid: #e9ebef;
+  /* 키보드 자리 입력판·선택 모드의 어두운 막대(어두운 화면에서도 어두운 채로) */
+  --app-bar: #15171c;
+  --app-bar-fg: #ffffff;
   color-scheme: light;
 }
 
@@ -38,6 +41,8 @@
     --app-chart-expense: #f0595d;
     --app-chart-income: #5a8ef7;
     --app-chart-grid: #262a32;
+    --app-bar: #2a2f38;
+    --app-bar-fg: #eceef2;
     color-scheme: dark;
   }
 }
@@ -58,6 +63,8 @@
   --color-expense: var(--app-expense);
   --color-income: var(--app-income);
   --color-transfer: var(--app-transfer);
+  --color-bar: var(--app-bar);
+  --color-bar-fg: var(--app-bar-fg);
   --color-chart-expense: var(--app-chart-expense);
   --color-chart-income: var(--app-chart-income);
   --color-chart-grid: var(--app-chart-grid);

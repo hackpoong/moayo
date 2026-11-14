@@ -1,35 +1,39 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, type ComponentType } from 'react';
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router';
 import { Splash } from '../components/ui.tsx';
 import { useAuth } from '../lib/authContext.ts';
 import { HouseholdProvider } from '../lib/household.tsx';
 import { useHouseholds } from '../lib/householdContext.ts';
 import { supabase } from '../lib/supabase.ts';
-import { CalendarPage } from '../pages/CalendarPage.tsx';
 import { Home } from '../pages/Home.tsx';
-import { Join } from '../pages/Join.tsx';
 import { Login } from '../pages/Login.tsx';
-import { More } from '../pages/More.tsx';
 import { Onboarding } from '../pages/Onboarding.tsx';
-import { AiUsagePage } from '../pages/settings/AiUsage.tsx';
-import { CategoriesPage } from '../pages/settings/Categories.tsx';
-import { ExportPage } from '../pages/settings/Export.tsx';
-import { PaymentMethodsPage } from '../pages/settings/PaymentMethods.tsx';
-import { TagsPage } from '../pages/settings/Tags.tsx';
-import { TransferRulesPage } from '../pages/settings/TransferRules.tsx';
-import { RenameRulesPage } from '../pages/settings/RenameRules.tsx';
-import { RecurringPage } from '../pages/settings/Recurring.tsx';
 import { SetupNeeded } from '../pages/SetupNeeded.tsx';
-import { Transactions } from '../pages/Transactions.tsx';
 import { Shell } from './Shell.tsx';
 
-const loadStats = () => import('../pages/Stats.tsx');
-const Stats = lazy(() => loadStats().then((m) => ({ default: m.Stats })));
+// 첫 화면(홈)에 필요 없는 화면은 따로 나눠 받는다. 첫 화면이 뜬 뒤 한가할 때 모두 미리 받아 둔다.
+const prefetchers: (() => Promise<unknown>)[] = [];
+function page<M>(load: () => Promise<M>, pick: (m: M) => ComponentType) {
+  prefetchers.push(load);
+  return lazy(() => load().then((m) => ({ default: pick(m) })));
+}
+const Transactions = page(() => import('../pages/Transactions.tsx'), (m) => m.Transactions);
+const CalendarPage = page(() => import('../pages/CalendarPage.tsx'), (m) => m.CalendarPage);
+const Stats = page(() => import('../pages/Stats.tsx'), (m) => m.Stats);
+const More = page(() => import('../pages/More.tsx'), (m) => m.More);
+const Join = page(() => import('../pages/Join.tsx'), (m) => m.Join);
+const AiUsagePage = page(() => import('../pages/settings/AiUsage.tsx'), (m) => m.AiUsagePage);
+const CategoriesPage = page(() => import('../pages/settings/Categories.tsx'), (m) => m.CategoriesPage);
+const ExportPage = page(() => import('../pages/settings/Export.tsx'), (m) => m.ExportPage);
+const PaymentMethodsPage = page(() => import('../pages/settings/PaymentMethods.tsx'), (m) => m.PaymentMethodsPage);
+const TagsPage = page(() => import('../pages/settings/Tags.tsx'), (m) => m.TagsPage);
+const TransferRulesPage = page(() => import('../pages/settings/TransferRules.tsx'), (m) => m.TransferRulesPage);
+const RenameRulesPage = page(() => import('../pages/settings/RenameRules.tsx'), (m) => m.RenameRulesPage);
+const RecurringPage = page(() => import('../pages/settings/Recurring.tsx'), (m) => m.RecurringPage);
 
-// 첫 화면이 뜬 뒤 한가할 때 통계 화면을 미리 받아 둔다(누르는 순간 바로 뜨게).
 if (typeof window !== 'undefined') {
   const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 1500));
-  idle(() => void loadStats());
+  idle(() => prefetchers.forEach((load) => void load()));
 }
 
 export function App() {
@@ -38,20 +42,20 @@ export function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<RequireAuth />}>
-          <Route path="/join/:code" element={<Join />} />
+          <Route
+            path="/join/:code"
+            element={
+              <Suspense fallback={<Splash />}>
+                <Join />
+              </Suspense>
+            }
+          />
           <Route path="/welcome" element={<RequireNoHousehold />} />
           <Route element={<RequireHousehold />}>
             <Route index element={<Home />} />
             <Route path="/transactions" element={<Transactions />} />
             <Route path="/calendar" element={<CalendarPage />} />
-            <Route
-              path="/stats"
-              element={
-                <Suspense fallback={<p className="py-10 text-center text-sm text-muted">불러오는 중…</p>}>
-                  <Stats />
-                </Suspense>
-              }
-            />
+            <Route path="/stats" element={<Stats />} />
             <Route path="/more/payment-methods" element={<PaymentMethodsPage />} />
             <Route path="/more/categories" element={<CategoriesPage />} />
             <Route path="/more/rename-rules" element={<RenameRulesPage />} />

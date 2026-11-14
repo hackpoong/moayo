@@ -110,7 +110,7 @@ function SelectionBar({ api }: { api: SelectionApi }) {
   return createPortal(
     <>
       <div className="backdrop-in fixed inset-x-0 top-0 z-40 shadow-lg" role="toolbar" aria-label="고른 내역">
-        <div className="pt-safe bg-fg text-bg">
+        <div className="pt-safe bg-bar text-bar-fg">
           <div className="mx-auto flex h-12 max-w-3xl items-center gap-1 px-2">
             <button type="button" aria-label="고르기 끝" onClick={api.clear} className="press flex size-11 items-center justify-center rounded-full">
               <ArrowLeft className="size-6" aria-hidden />

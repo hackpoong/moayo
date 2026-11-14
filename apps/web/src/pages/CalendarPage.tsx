@@ -5,6 +5,7 @@ import { BasisToggle, EmptyState, MonthNav } from '../components/bits.tsx';
 import { TxRow } from '../components/TxRow.tsx';
 import { useData } from '../data/dataContext.ts';
 import { useLedger } from '../data/useLedger.ts';
+import { memberColor } from '../lib/members.ts';
 import { useOpenEditor } from '../editor/editorContext.ts';
 import { dayLabel } from '../lib/format.ts';
 import { usePrefs } from '../lib/prefs.ts';
@@ -23,6 +24,18 @@ export function CalendarPage() {
   const { from, to } = monthRange(month);
   const monthEntries = useMemo(() => inRange(entries, from, to), [entries, from, to]);
   const daily = useMemo(() => dailyTotals(monthEntries), [monthEntries]);
+  // 날짜별로 누가 썼는지(💛·💙 점).
+  const people = data.members.filter((mm) => !mm.deleted_at);
+  const whoByDay = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const e of monthEntries) {
+      if (e.kind === 'transfer' || !e.memberId) continue;
+      const set = map.get(e.date) ?? new Set<string>();
+      set.add(e.memberId);
+      map.set(e.date, set);
+    }
+    return map;
+  }, [monthEntries]);
   const monthTotal = totals(monthEntries);
 
   const { y, m } = parseDate(from);
@@ -91,8 +104,17 @@ export function CalendarPage() {
                 >
                   {day}
                 </span>
-                {t?.expense ? <span className="text-fg">-{formatCompact(t.expense)}</span> : null}
-                {t?.income ? <span className="text-income">+{formatCompact(t.income)}</span> : null}
+                {t?.expense ? <span className="text-expense">{formatCompact(t.expense)}</span> : null}
+                {t?.income ? <span className="text-income">{formatCompact(t.income)}</span> : null}
+                {people.length > 1 && whoByDay.get(date)?.size ? (
+                  <span className="mt-0.5 flex gap-0.5" aria-hidden>
+                    {people
+                      .filter((pp) => whoByDay.get(date)!.has(pp.id))
+                      .map((pp) => (
+                        <span key={pp.id} className="size-1.5 rounded-full" style={{ backgroundColor: memberColor(pp, data.members) }} />
+                      ))}
+                  </span>
+                ) : null}
               </button>
             );
           })}

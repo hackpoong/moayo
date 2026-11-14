@@ -6,7 +6,7 @@ import { Link } from 'react-router';
 import { BasisToggle, EmptyState } from '../components/bits.tsx';
 import { InstallPrompt } from '../components/InstallPrompt.tsx';
 import { TxRow } from '../components/TxRow.tsx';
-import { ImportButtons } from '../editor/ImportSheet.tsx';
+import { ImportButtons } from '../editor/ImportButtons.tsx';
 import { useData, useDataReady } from '../data/dataContext.ts';
 import { useLedger } from '../data/useLedger.ts';
 import { useOpenEditor } from '../editor/editorContext.ts';

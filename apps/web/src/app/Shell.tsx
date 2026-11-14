@@ -1,5 +1,5 @@
 import { CalendarDays, ChartPie, Ellipsis, House, ImagePlus, List, Plus, type LucideIcon } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { lazy, Suspense, useCallback, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { SyncBadge } from '../components/SyncBadge.tsx';
 import { ToastProvider } from '../components/Toast.tsx';
@@ -12,8 +12,6 @@ import { useRecurringGenerator } from '../data/useRecurringGenerator.ts';
 import { useClipboardOffer, useSharedInbox } from '../lib/inbound.ts';
 import { useToast } from '../components/toastContext.ts';
 import { EditorContext, type EditorRequest } from '../editor/editorContext.ts';
-import { ImportSheet } from '../editor/ImportSheet.tsx';
-import { TransactionEditor } from '../editor/TransactionEditor.tsx';
 import { useSession } from '../lib/authContext.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
 
@@ -22,6 +20,19 @@ interface Tab {
   label: string;
   icon: LucideIcon;
   end?: boolean;
+}
+
+// 입력 화면·불러오기 화면은 따로 받는다(첫 화면을 가볍게). 한가할 때 미리 받아 두어 + 를 누르면 바로 뜬다.
+const loadEditor = () => import('../editor/TransactionEditor.tsx');
+const loadImport = () => import('../editor/ImportSheet.tsx');
+const TransactionEditor = lazy(() => loadEditor().then((m) => ({ default: m.TransactionEditor })));
+const ImportSheet = lazy(() => loadImport().then((m) => ({ default: m.ImportSheet })));
+if (typeof window !== 'undefined') {
+  const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 800));
+  idle(() => {
+    void loadEditor();
+    void loadImport();
+  });
 }
 
 const TABS: Tab[] = [
@@ -111,7 +122,9 @@ function ShellLayout() {
               <div className="mb-2 flex justify-end empty:hidden md:hidden">
                 <SyncBadge />
               </div>
-              <Outlet />
+              <Suspense fallback={<div className="py-16" aria-busy="true" />}>
+                <Outlet />
+              </Suspense>
             </div>
           </main>
 
@@ -138,11 +151,13 @@ function ShellLayout() {
           </nav>
         </div>
       </div>
+      <Suspense fallback={null}>
       {editor?.request.importMode ? (
         <ImportSheet key={editor.key} initialMode={editor.request.importMode} initialText={editor.request.text} initialFiles={editor.request.files} onClose={closeEditor} />
       ) : editor ? (
         <TransactionEditor key={editor.key} request={editor.request} onClose={closeEditor} />
       ) : null}
+      </Suspense>
     </EditorContext.Provider>
   );
 }

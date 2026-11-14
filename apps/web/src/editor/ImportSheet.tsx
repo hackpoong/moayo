@@ -1,5 +1,5 @@
 import { formatWon, toKstDate, type Transaction } from '@moayo/core';
-import { CircleAlert, CircleCheck, Copy, ImagePlus, LoaderCircle, MessageSquareText, Plus, RefreshCw } from 'lucide-react';
+import { CircleAlert, CircleCheck, Copy, ImagePlus, LoaderCircle, MessageSquareText, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Segmented } from '../components/bits.tsx';
 import { Sheet } from '../components/Sheet.tsx';
@@ -85,7 +85,13 @@ interface Piece {
 
 async function prepare(file: File): Promise<Piece[]> {
   const bitmap = await createImageBitmap(file);
-  const { width, height } = bitmap;
+  const { width } = bitmap;
+  // 휴대폰 캡처(세로로 긴 화면)는 맨 위 상태 표시줄과 맨 아래 내비게이션 막대를 잘라 낸다.
+  // 읽을 내용이 없는 부분이라 보내는 크기·AI 이미지 토큰이 줄고, 시계 숫자를 금액으로 잘못 읽는 일도 막는다.
+  const phoneShot = bitmap.height / width > 1.9;
+  const top = phoneShot ? Math.round(bitmap.height * 0.03) : 0;
+  const bottom = phoneShot ? Math.round(bitmap.height * 0.03) : 0;
+  const height = bitmap.height - top - bottom;
   const toJpeg = (sx: number, sy: number, sw: number, sh: number, scale: number) => {
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(sw * scale);
@@ -98,7 +104,7 @@ async function prepare(file: File): Promise<Piece[]> {
   try {
     if (height / width <= 2.6) {
       const scale = Math.min(1, 1800 / Math.max(width, height), 1100 / Math.min(width, height));
-      return [await toJpeg(0, 0, width, height, scale)];
+      return [await toJpeg(0, top, width, height, scale)];
     }
     const scale = Math.min(1, 1100 / width);
     const tile = Math.round(width * 2);
@@ -106,7 +112,7 @@ async function prepare(file: File): Promise<Piece[]> {
     const pieces: Piece[] = [];
     for (let y = 0; y < height; y += step) {
       const h = Math.min(tile, height - y);
-      pieces.push(await toJpeg(0, y, width, h, scale));
+      pieces.push(await toJpeg(0, top + y, width, h, scale));
       if (y + h >= height) break;
     }
     return pieces;
@@ -414,20 +420,5 @@ function JobCard({ job, onRetry }: { job: Job; onRetry: () => void }) {
         </>
       ) : null}
     </li>
-  );
-}
-
-export function ImportButtons({ onPick }: { onPick: (mode: Mode) => void }) {
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      <button type="button" onClick={() => onPick('image')} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-brand-soft text-sm font-semibold text-brand">
-        <ImagePlus className="size-5" aria-hidden />
-        사진·캡처로
-      </button>
-      <button type="button" onClick={() => onPick('text')} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-brand-soft text-sm font-semibold text-brand">
-        <Plus className="size-5" aria-hidden />
-        문자 붙여넣기
-      </button>
-    </div>
   );
 }

@@ -52,14 +52,14 @@ export function TxRow({ tx, amount }: { tx: Transaction; amount?: number }) {
       const whoId = pm?.owner_member_id ?? p.member_id;
       const who = whoId ? data.byId.member.get(whoId) : null;
       const name = pm?.name ?? (pays.length === 1 ? tx.payment_label : null);
-      return [showWho ? who?.emoji : null, name].filter(Boolean).join(' ');
+      return name ? [showWho ? who?.emoji : null, name].filter(Boolean).join(' ') : '';
     })
     .filter(Boolean)
     .join(' · ');
   const subText = [payText, tx.installment_months > 1 ? `${tx.installment_months}개월` : null].filter(Boolean).join(' · ');
 
   return (
-    <div className="relative -mx-2 overflow-hidden rounded-xl">
+    <div className="relative -mx-2 overflow-hidden">
       {dx !== 0 ? (
         <div className={`absolute inset-0 flex items-center px-5 text-sm font-semibold text-white ${dx > 0 ? 'justify-start bg-income' : 'justify-end bg-expense'}`} aria-hidden>
           {dx > 0 ? <Copy className="mr-1.5 size-4" /> : null}
