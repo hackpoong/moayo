@@ -2,6 +2,8 @@
 [build]
   command = "npm run build"
   publish = "apps/web/dist"
+  # 크레딧 절약: 커밋 메시지에 [deploy] 가 있을 때만 빌드·배포한다(0 = 건너뜀, 1 = 빌드).
+  ignore = "git log -1 --pretty=%B | grep -qF '[deploy]' && exit 1 || exit 0"
 
 [build.environment]
   NODE_VERSION = "22"

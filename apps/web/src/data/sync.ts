@@ -32,6 +32,10 @@ export class SyncEngine {
   private again = false;
   private stopped = false;
   private cleanups: (() => void)[] = [];
+  /** 실시간 연결이 살아 있으면 저장 뒤에 받기를 건너뛴다(바뀐 것은 실시간으로 온다). */
+  private realtimeLive = false;
+  private pullWanted = true;
+  private hiddenAt = 0;
 
   constructor(
     private readonly client: SupabaseClient,
@@ -60,10 +64,15 @@ export class SyncEngine {
     this.setStatus({ initialized });
 
     const onOnline = () => this.syncNow();
-    const onVisible = () => document.visibilityState === 'visible' && this.syncNow();
+    // 화면이 30초 넘게 숨겨졌다 돌아오면 전부 받는다(그사이 실시간 연결이 끊겼을 수 있다).
+    const onVisible = () => {
+      if (document.visibilityState === 'hidden') this.hiddenAt = Date.now();
+      else if (Date.now() - this.hiddenAt > 30_000) this.syncNow();
+    };
     window.addEventListener('online', onOnline);
     document.addEventListener('visibilitychange', onVisible);
-    const interval = window.setInterval(() => this.syncNow(), 5 * 60_000);
+    // 보이는 동안만 가끔 확인한다(배터리·데이터 절약).
+    const interval = window.setInterval(() => document.visibilityState === 'visible' && this.syncNow(), 5 * 60_000);
     this.cleanups.push(
       () => window.removeEventListener('online', onOnline),
       () => document.removeEventListener('visibilitychange', onVisible),
@@ -86,6 +95,11 @@ export class SyncEngine {
 
   /** 올리고 받기. 이미 돌고 있으면 끝난 뒤 한 번 더 돈다. */
   syncNow(): void {
+    this.pullWanted = true;
+    this.run();
+  }
+
+  private run(): void {
     if (this.stopped) return;
     if (this.running) {
       this.again = true;
@@ -95,7 +109,7 @@ export class SyncEngine {
       this.running = null;
       if (this.again && !this.stopped) {
         this.again = false;
-        this.syncNow();
+        this.run();
       }
     });
   }
@@ -103,7 +117,8 @@ export class SyncEngine {
   /** 기기에서 바뀐 것이 생겼을 때. 잠깐 모았다가 올린다. */
   schedulePush(): void {
     if (this.pushTimer) clearTimeout(this.pushTimer);
-    this.pushTimer = setTimeout(() => this.syncNow(), 250);
+    // 올리기만. 실시간 연결이 없으면 cycle 이 받기까지 한다.
+    this.pushTimer = setTimeout(() => this.run(), 250);
   }
 
   private async cycle(): Promise<void> {
@@ -114,7 +129,10 @@ export class SyncEngine {
     this.setStatus({ state: 'syncing' });
     try {
       await this.push();
-      await this.pull();
+      if (this.pullWanted || !this.realtimeLive) {
+        this.pullWanted = false;
+        await this.pull();
+      }
       if (!this.status.initialized) {
         await this.db.meta.put({ key: this.metaKey('initialized'), value: '1' });
       }
@@ -194,7 +212,12 @@ export class SyncEngine {
 
   // ── 받기 ─────────────────────────────────────────────────────────────────
   private async pull(): Promise<void> {
-    for (const table of PULL_TABLES) {
+    // 표마다 따로 받으니 한꺼번에 보낸다.
+    await Promise.all(PULL_TABLES.map((table) => this.pullTable(table)));
+  }
+
+  private async pullTable(table: PullTable): Promise<void> {
+    {
       const cursorKey = this.metaKey(`cursor:${table}`);
       let cursor = (await this.db.meta.get(cursorKey))?.value ?? null;
       for (;;) {
@@ -255,6 +278,7 @@ export class SyncEngine {
     }
     this.channel = channel.subscribe((status) => {
       // 연결이 (다시) 맺어지면 끊긴 사이의 변경을 받아 온다.
+      this.realtimeLive = status === 'SUBSCRIBED';
       if (status === 'SUBSCRIBED') this.syncNow();
     });
   }
