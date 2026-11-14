@@ -27,6 +27,7 @@ import {
 } from '@moayo/core';
 import { ArrowLeft, ArrowLeftRight, Camera, History, MessageSquareText, Plus, Repeat, Sparkles, Trash2, X } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { InfoTip } from '../components/InfoTip.tsx';
 import { MemberBadge } from '../components/MemberBadge.tsx';
 import { Sheet } from '../components/Sheet.tsx';
 import { useToast } from '../components/toastContext.ts';
@@ -530,7 +531,6 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         multi={payMulti}
         onToggleMulti={kind === 'transfer' ? undefined : togglePayMulti}
         onNextMember={nextMember}
-        nextMember={activeMembers.length > 1 ? (activeMembers[(activeMembers.findIndex((m) => m.id === viewingMember?.id) + 1) % activeMembers.length] ?? null) : null}
         onAdd={() => setAdding('asset')}
         onClose={() => openPanel(null)}
       />
@@ -636,7 +636,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
                   <input type="date" aria-label="날짜" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} className="absolute inset-0 opacity-0" />
                 </label>
                 <label className="relative min-w-16">
-                  <span className="text-base">{timeLabel}</span>
+                  {timeLabel ? <span className="text-base">{timeLabel}</span> : <span className="text-xs font-normal text-muted/70">눌러서 시간 입력</span>}
                   <input type="time" aria-label="시각" value={time} onChange={(e) => setTime(e.target.value)} className="absolute inset-0 opacity-0" />
                 </label>
               </div>
@@ -769,9 +769,9 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
                         {activeMembers.length > 1 && who ? <MemberBadge member={who} size="md" /> : null}
                         <span aria-hidden>{assetIcon(pm)}</span>
                         <span className="truncate">{pm?.name ?? '자산'}</span>
+                        {due !== date ? <InfoTip text={`${shortDate(due)} 결제 예정`} label="결제 예정일" /> : null}
                       </>
                     ),
-                    sub: due !== date ? `${shortDate(due)} 결제 예정` : null,
                     amount: x.amount,
                     editing: panel === 'amount' && amountTarget?.kind === 'pay' && amountTarget.index === i,
                     onAmount: () => editRowAmount({ kind: 'pay', index: i }),
@@ -786,13 +786,11 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
                     {activeMembers.length > 1 && member ? <MemberBadge member={member} size="md" /> : null}
                     {paymentMethod ? <span aria-hidden>{assetIcon(paymentMethod)}</span> : null}
                     <span className="truncate">{paymentMethod?.name ?? (original?.payment_label ? `‘${original.payment_label}’` : '선택')}</span>
+                    {cashDate !== date ? (
+                      <InfoTip text={`${shortDate(cashDate)} 결제 예정${isCredit && installments > 1 ? ` · ${installments}개월 나눠서` : ''}`} label="결제 예정일" />
+                    ) : null}
                   </span>
                 </Row>
-                {cashDate !== date ? (
-                  <p className="py-1 pl-14 text-xs font-normal text-muted">
-                    {shortDate(cashDate)} 결제 예정{isCredit && installments > 1 ? ` · ${installments}개월 나눠서` : ''}
-                  </p>
-                ) : null}
               </>
             )}
           </div>
@@ -854,7 +852,8 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
             onChange={(e) => setMemo(e.target.value)}
             onFocus={() => setPanel(null)}
             maxLength={500}
-            rows={Math.min(6, Math.max(1, memo.split('\n').length))}
+            enterKeyHint="enter"
+            rows={Math.min(8, Math.max(1, memo.split('\n').length))}
             placeholder="메모"
             aria-label="메모"
             className="block w-full resize-none border-b border-line bg-transparent py-2.5 text-base leading-relaxed outline-none placeholder:text-muted/60 focus:border-brand"
@@ -922,7 +921,6 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
 interface MultiRow {
   key: string;
   label: ReactNode;
-  sub?: string | null;
   amount: number;
   editing: boolean;
   onAmount: () => void;
@@ -933,19 +931,20 @@ interface MultiRow {
 function MultiRows({ label, rows, gap, active, empty, onOpen }: { label: string; rows: MultiRow[]; gap: number; active: boolean; empty: string; onOpen: () => void }) {
   return (
     <div className="flex gap-3">
-      <span className="flex h-11 w-11 shrink-0 items-center text-sm font-normal text-muted">{label}</span>
-      <div className={`min-w-0 flex-1 border-b-2 transition-colors ${active ? 'border-brand' : 'border-line'}`}>
+      <span className="flex h-10 w-11 shrink-0 items-center pt-0.5 text-sm font-normal text-muted">{label}</span>
+      <div className={`min-w-0 flex-1 border-b py-0.5 transition-colors ${active ? 'border-brand' : 'border-line'}`}>
         {rows.length === 0 ? (
           <button type="button" onClick={onOpen} className="flex h-11 w-full items-center text-base text-muted/50">
             {empty}
           </button>
         ) : null}
         {rows.map((r, i) => (
-          <div key={r.key} className={`${i > 0 ? 'border-t border-line' : ''}`}>
-            <div className="flex min-h-11 items-center gap-2">
-              <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-base">
+          <div key={r.key}>
+            <div className={`flex items-center gap-2 ${i === 0 ? 'min-h-10' : 'min-h-9'}`}>
+              {/* 안에 ⓘ 버튼이 들어갈 수 있어 button 대신 div */}
+              <div role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => e.key === 'Enter' && onOpen()} className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-base">
                 {r.label}
-              </button>
+              </div>
               <button
                 type="button"
                 onClick={(e) => {
@@ -953,7 +952,7 @@ function MultiRows({ label, rows, gap, active, empty, onOpen }: { label: string;
                   r.onAmount();
                 }}
                 aria-label="금액 고치기"
-                className={`tabular h-8 shrink-0 rounded-lg px-2.5 text-right text-base font-semibold ${r.editing ? 'bg-brand-soft text-brand ring-1 ring-brand' : 'bg-surface-2'}`}
+                className={`tabular h-7 shrink-0 rounded-lg px-2.5 text-right text-base font-semibold ${r.editing ? 'bg-brand-soft text-brand ring-1 ring-brand' : 'bg-surface-2'}`}
               >
                 {formatAmount(r.amount)}원
               </button>
@@ -961,7 +960,6 @@ function MultiRows({ label, rows, gap, active, empty, onOpen }: { label: string;
                 <X className="size-4" aria-hidden />
               </button>
             </div>
-            {r.sub ? <p className="-mt-1.5 pb-1.5 text-xs font-normal text-muted">{r.sub}</p> : null}
           </div>
         ))}
         {gap !== 0 && rows.length > 0 ? (
@@ -983,7 +981,7 @@ function Row({ label, active, onClick, children }: { label: string; active?: boo
       className={`flex min-h-11 items-center gap-3 ${onClick ? 'cursor-pointer' : ''}`}
     >
       <span className="w-11 shrink-0 text-sm font-normal text-muted">{label}</span>
-      <div className={`flex min-h-11 min-w-0 flex-1 items-center border-b-2 transition-colors ${active ? 'border-brand' : 'border-line'}`}>{children}</div>
+      <div className={`flex min-h-11 min-w-0 flex-1 items-center border-b transition-colors ${active ? 'border-brand' : 'border-line'}`}>{children}</div>
     </div>
   );
 }

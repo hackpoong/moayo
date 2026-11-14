@@ -6,6 +6,7 @@ import { appendMemoLines, matchCandidates, type Decision } from './match.ts';
 import { normalizeExtraction, resolvePaymentMethod, type NormalizeContext } from './normalize.ts';
 import { parseSms } from './sms.ts';
 import { maskSensitive, merchantSimilarity } from './text.ts';
+import { coerceExtraction } from './coerce.ts';
 import type { ExtractedItem, Extraction } from './types.ts';
 
 // ── 테스트용 가족 설정 ──────────────────────────────────────────────────────
@@ -595,5 +596,21 @@ describe('앞으로도 계속 바꾸기 규칙', () => {
     );
     expect([c!.merchant, c!.category_id, c!.payment_method_id]).toEqual(['휴대폰충전', 'c-food', 'pm-card']);
     expect(c!.memo).toContain('업체명 : 에브리 포터블');
+  });
+});
+
+describe('제목 앞 이모지', () => {
+  it('이모지가 있어도 같은 가게로 본다', () => {
+    expect(merchantSimilarity('🍔맥도날드', '맥도날드')).toBe(1);
+    expect(merchantSimilarity('♨️ 찜질방', '찜질방')).toBe(1);
+  });
+  it('AI 가 고른 이모지를 제목 앞에 붙이고, 메모의 업체명은 원래 이름', () => {
+    const [c] = normalizeExtraction(extraction([{ merchant: '맥도날드 세종점', amount: 6500, emoji: '🍔' }]), ctx());
+    expect(c!.merchant).toBe('🍔맥도날드 세종점');
+    expect(c!.memo).toContain('업체명 : 맥도날드 세종점');
+  });
+  it('이모지가 아닌 값은 버린다', () => {
+    const ex = coerceExtraction({ source_kind: 'receipt', items: [{ merchant: 'A', amount: 1, kind: 'expense', status: 'approved', emoji: 'burger' }] });
+    expect(ex.items[0]!.emoji).toBeNull();
   });
 });

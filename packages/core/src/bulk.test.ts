@@ -65,6 +65,16 @@ describe('병합', () => {
     ]);
     expect(r.merged.memo).toContain('합친 내역 : 이마트주차 −3,000원 · 이마트환불 +20,000원');
   });
+  it('기준 내역을 고르면 그 제목·분류를 따른다', () => {
+    const txs = [
+      makeTx({ id: 'e1', merchant: '이마트', amount: 200000, splits: [{ category_id: 'food', amount: 200000 }] }),
+      makeTx({ id: 'e2', merchant: '이마트주차', amount: 3000, splits: [{ category_id: 'car', amount: 3000 }] }),
+    ];
+    const r = mergeTransactions(txs, 'n', 'now', 'e2');
+    if (!r.ok) throw new Error(r.reason);
+    expect([r.merged.merchant, r.merged.amount, r.merged.splits]).toEqual(['이마트주차', 203000, [{ category_id: 'car', amount: 203000 }]]);
+    expect(r.merged.memo).toContain('합친 내역 : 이마트 −200,000원');
+  });
   it('합이 + 면 수입, 이체는 거부', () => {
     const r = mergeTransactions([makeTx({ kind: 'income', amount: 5000 }), makeTx({ amount: 1000 })], 'n', 'now');
     expect(r.ok && r.merged.kind).toBe('income');

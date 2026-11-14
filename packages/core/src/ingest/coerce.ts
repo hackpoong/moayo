@@ -59,6 +59,7 @@ function coerceItem(raw: unknown): ExtractedItem | null {
       })
       .filter((l): l is ExtractedLine => l !== null),
     category_hint: str(o.category_hint),
+    emoji: emojiOnly(o.emoji),
   };
 }
 
@@ -74,4 +75,12 @@ export function toAnyOfNullable(schema: unknown): unknown {
     return { anyOf: [{ type: base, ...rest }, { type: 'null' }], ...(description ? { description } : {}) };
   }
   return s;
+}
+
+/** 이모지 한 글자만 받는다(글자·숫자가 섞이면 버림). */
+function emojiOnly(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  if (!t || t.length > 16 || /[\p{L}\p{N}]/u.test(t)) return null;
+  return /\p{Extended_Pictographic}|\p{So}/u.test(t) ? t : null;
 }

@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { SyncBadge } from '../components/SyncBadge.tsx';
 import { ToastProvider } from '../components/Toast.tsx';
+import { AddMenu } from '../components/AddMenu.tsx';
 import { BulkRenameProvider } from '../bulk/BulkRename.tsx';
 import { SelectionProvider } from '../bulk/Selection.tsx';
 import { Logo } from '../components/ui.tsx';
@@ -114,14 +115,7 @@ function ShellLayout() {
             </div>
           </main>
 
-          <button
-            type="button"
-            aria-label="내역 추가"
-            onClick={() => openEditor()}
-            className="press vt-fab fixed bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] right-4 z-10 flex size-14 items-center justify-center rounded-full bg-brand text-brand-fg shadow-lg shadow-black/20 active:scale-95 md:hidden"
-          >
-            <Plus className="size-7" aria-hidden />
-          </button>
+          <AddMenu open={openEditor} />
 
           <nav className="vt-tabbar pb-safe fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface/95 backdrop-blur md:hidden" aria-label="주 메뉴">
             <ul className="mx-auto flex max-w-2xl">

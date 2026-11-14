@@ -1,4 +1,4 @@
-import type { Category, Member, PaymentMethod, Tag, Transaction, TransferRule } from '@moayo/core';
+import { compareRecent, type Category, type Member, type PaymentMethod, type Tag, type Transaction, type TransferRule } from '@moayo/core';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { db as supabaseClient } from '../lib/supabase.ts';
@@ -7,7 +7,7 @@ import { openLocalDb, type PushTable, type RowByTable } from './localDb.ts';
 import { SyncEngine, type SyncStatus } from './sync.ts';
 
 const byOrder = <T extends { sort: number; name: string }>(a: T, b: T) => a.sort - b.sort || a.name.localeCompare(b.name, 'ko');
-const byRecent = (a: Transaction, b: Transaction) => b.occurred_at.localeCompare(a.occurred_at) || b.created_at.localeCompare(a.created_at);
+const byRecent = compareRecent;
 const live = <T extends { deleted_at: string | null }>(rows: T[]) => rows.filter((r) => !r.deleted_at);
 
 type Overlay = { [K in PushTable]: Map<string, RowByTable[K]> };

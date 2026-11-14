@@ -1,21 +1,28 @@
+import { emojiTint } from '../lib/emojiTint.ts';
 import type { Category, DateBasis } from '@moayo/core';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { monthLabel } from '../lib/format.ts';
 import { setPref } from '../lib/prefs.ts';
 
-/** 카테고리 아이콘(이모지)을 색 원 안에. */
-export function CategoryIcon({ category, size = 'md' }: { category: Category | null | undefined; size?: 'sm' | 'md' | 'lg' }) {
+/** 원형 이모지: 배경은 이모지 색에 맞춘 연한 색(없으면 fallback 색). */
+export function EmojiCircle({ emoji, fallbackColor, size = 'md' }: { emoji: string | null | undefined; fallbackColor?: string | null; size?: 'sm' | 'md' | 'lg' }) {
   const box = { sm: 'size-8 text-base', md: 'size-10 text-xl', lg: 'size-12 text-2xl' }[size];
+  const tint = emojiTint(emoji);
+  const style = (
+    tint
+      ? { '--tint-l': tint.light, '--tint-d': tint.dark }
+      : { '--tint-l': fallbackColor ? `${fallbackColor}22` : 'var(--app-surface-2)', '--tint-d': fallbackColor ? `${fallbackColor}33` : 'var(--app-surface-2)' }
+  ) as CSSProperties;
   return (
-    <span
-      className={`flex shrink-0 items-center justify-center rounded-full ${box}`}
-      style={{ backgroundColor: category?.color ? `${category.color}22` : 'var(--app-surface-2)' }}
-      aria-hidden
-    >
-      {category?.icon ?? '❔'}
+    <span className={`flex shrink-0 items-center justify-center rounded-full bg-(--tint-l) dark:bg-(--tint-d) ${box}`} style={style} aria-hidden>
+      {emoji ?? '❔'}
     </span>
   );
+}
+
+export function CategoryIcon({ category, size = 'md' }: { category: Category | null | undefined; size?: 'sm' | 'md' | 'lg' }) {
+  return <EmojiCircle emoji={category?.icon ?? null} fallbackColor={category?.color} size={size} />;
 }
 
 export function MonthNav({ month, onChange, children }: { month: string; onChange: (delta: number) => void; children?: ReactNode }) {

@@ -9,9 +9,8 @@ import {
   type PaymentMethod,
   type PaymentMethodType,
 } from '@moayo/core';
-import { ArrowLeftRight, ChevronDown, Delete, Pencil, Sparkles } from 'lucide-react';
+import { ChevronDown, Delete, Pencil, Sparkles } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { MemberBadge } from '../components/MemberBadge.tsx';
 import { assetIcon } from '../lib/assets.ts';
 import { haptic } from '../lib/flash.ts';
 
@@ -42,6 +41,37 @@ function PanelFrame({ title, actions, onClose, children }: { title: ReactNode; a
       </div>
       <div className="max-h-[40dvh] min-h-[16rem] overflow-y-auto overscroll-contain">{children}</div>
     </div>
+  );
+}
+
+/** 두 사람 스위치: [💛은주 | 💙성욱], 누르면 동그라미가 미끄러져 다른 사람으로 바뀐다. */
+function MemberSwitch({ members, value, onToggle }: { members: Member[]; value: Member; onToggle: () => void }) {
+  const pair = members.slice(0, 2);
+  const at = Math.max(0, pair.findIndex((m) => m.id === value.id));
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={at === 1}
+      aria-label={`자산 주인: ${value.display_name} (누르면 바꾸기)`}
+      onClick={() => {
+        haptic(8);
+        onToggle();
+      }}
+      className="relative grid h-9 grid-cols-2 items-center rounded-full bg-bg/15 p-0.5 text-[13px] font-semibold"
+    >
+      <span
+        className="absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-full bg-bg shadow transition-transform duration-200 ease-out"
+        style={{ transform: at === 1 ? 'translateX(100%)' : 'translateX(0)' }}
+        aria-hidden
+      />
+      {pair.map((m, i) => (
+        <span key={m.id} className={`relative z-10 flex items-center justify-center gap-0.5 px-2.5 transition-colors ${i === at ? 'text-fg' : 'text-bg/70'}`}>
+          <span aria-hidden>{m.emoji}</span>
+          {m.display_name}
+        </span>
+      ))}
+    </button>
   );
 }
 
@@ -192,7 +222,6 @@ export function AssetPanel({
   multi,
   onToggleMulti,
   onNextMember,
-  nextMember,
   onAdd,
   onClose,
 }: {
@@ -205,8 +234,6 @@ export function AssetPanel({
   /** 없으면 다중선택을 보여 주지 않는다(이체 등). */
   onToggleMulti?: () => void;
   onNextMember: () => void;
-  /** 바꾸기를 누르면 보게 될 사람. */
-  nextMember?: Member | null;
   onAdd: () => void;
   onClose: () => void;
 }) {
@@ -217,27 +244,11 @@ export function AssetPanel({
 
   return (
     <PanelFrame
-      title={
-        members.length > 1 && viewingMember ? (
-          <span className="flex items-center" aria-label={`${viewingMember.display_name}의 자산`}>
-            <span className="rounded-full bg-bg/15 px-2 py-0.5">
-              <MemberBadge member={viewingMember} size="md" />
-            </span>
-          </span>
-        ) : (
-          '자산'
-        )
-      }
+      title={members.length > 1 && viewingMember ? <MemberSwitch members={members} value={viewingMember} onToggle={onNextMember} /> : '자산'}
       onClose={onClose}
       actions={
         <>
           {onToggleMulti ? <MultiToggle on={multi} onClick={onToggleMulti} /> : null}
-          {members.length > 1 ? (
-            <BarButton label="다른 사람 자산 보기" onClick={onNextMember}>
-              <ArrowLeftRight className="size-4" aria-hidden />
-              {nextMember ? `${nextMember.emoji ?? ''}${nextMember.display_name}` : '바꾸기'}
-            </BarButton>
-          ) : null}
           <BarButton label="자산 편집" onClick={onAdd}>
             <Pencil className="size-5" aria-hidden />
           </BarButton>

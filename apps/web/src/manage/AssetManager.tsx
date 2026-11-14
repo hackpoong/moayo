@@ -323,7 +323,15 @@ export function AssetEditor({
             </Line>
           ) : null}
           <Line label="메모">
-            <input value={memo} onChange={(e) => setMemo(e.target.value)} maxLength={500} aria-label="메모" className="w-full bg-transparent text-base outline-none" />
+            <textarea
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              maxLength={500}
+              enterKeyHint="enter"
+              rows={Math.min(6, Math.max(1, memo.split('\n').length))}
+              aria-label="메모"
+              className="w-full resize-none bg-transparent py-3 text-base leading-relaxed outline-none"
+            />
           </Line>
 
           <div className="-mx-5 my-3 h-2 bg-bg" />

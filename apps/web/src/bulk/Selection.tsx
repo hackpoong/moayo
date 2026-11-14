@@ -217,7 +217,10 @@ function ActionSheet({ action, txs, onClose, onDone }: { action: Action; txs: Tr
 
   const kinds = new Set(txs.map((t) => t.kind));
   const catKind: CategoryKind = kinds.has('expense') || !kinds.has('income') ? 'expense' : 'income';
-  const merge = action === 'merge' ? mergeTransactions(txs, newId(), new Date().toISOString()) : null;
+  // 병합 기준: 처음에는 절대금액이 가장 큰 내역.
+  const [leadId, setLeadId] = useState(() => [...txs].filter((t) => t.status !== 'canceled').sort((a, b) => b.amount - a.amount)[0]?.id ?? txs[0]?.id);
+  const [mergeId] = useState(() => newId());
+  const merge = action === 'merge' ? mergeTransactions(txs, mergeId, new Date().toISOString(), leadId) : null;
   const people = data.members.filter((m) => !m.deleted_at);
 
   const body = (close: () => void): ReactNode => {
@@ -370,6 +373,41 @@ function ActionSheet({ action, txs, onClose, onDone }: { action: Action; txs: Tr
         const m = merge.merged;
         return (
           <div className="space-y-4 pb-2">
+            <div>
+              <p className="mb-1.5 text-sm font-normal text-muted">어느 내역으로 합칠까요? (제목·분류·날짜를 따릅니다)</p>
+              <ul className="-mx-1 space-y-1" role="radiogroup" aria-label="합칠 기준 내역">
+                {txs.map((t) => {
+                  const on = t.id === leadId;
+                  const pm = t.payment_method_id ? data.byId.paymentMethod.get(t.payment_method_id) : null;
+                  return (
+                    <li key={t.id}>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        onClick={() => setLeadId(t.id)}
+                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left ${on ? 'bg-brand-soft ring-1 ring-brand' : 'bg-surface-2'}`}
+                      >
+                        <span className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${on ? 'border-brand' : 'border-line'}`} aria-hidden>
+                          {on ? <span className="size-2.5 rounded-full bg-brand" /> : null}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-semibold">{t.merchant ?? '이름 없음'}</span>
+                          <span className="block truncate text-xs font-normal text-muted">
+                            {toKstDate(t.occurred_at).slice(5).replace('-', '.')} {pm ? `· ${assetIcon(pm)}${pm.name}` : ''}
+                            {t.status === 'canceled' ? ' · 취소됨' : ''}
+                          </span>
+                        </span>
+                        <span className={`tabular shrink-0 font-semibold ${t.kind === 'income' ? 'text-income' : 'text-expense'} ${t.status === 'canceled' ? 'line-through opacity-50' : ''}`}>
+                          {t.kind === 'income' ? '+' : '−'}
+                          {t.amount.toLocaleString('ko-KR')}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
             <div className="rounded-xl bg-surface-2 p-4">
               <p className="text-sm font-normal text-muted">합친 결과</p>
               <p className="mt-1 text-lg font-bold">

@@ -67,7 +67,7 @@ export type MergeResult = { ok: true; merged: Transaction; originals: Transactio
  *  * 자산·쓴 사람이 다르면 자산별 금액으로 남긴다.
  *  * 메모 끝에 합친 내역을 적는다. 원래 내역은 status 'merged' 로 남겨 다시 불러와도 되살아나지 않게 한다.
  */
-export function mergeTransactions(txs: readonly Transaction[], newId: Uuid, now: string): MergeResult {
+export function mergeTransactions(txs: readonly Transaction[], newId: Uuid, now: string, leadId?: Uuid): MergeResult {
   if (txs.length < 2) return { ok: false, reason: '두 건 이상 골라 주세요' };
   if (txs.some((t) => t.kind === 'transfer')) return { ok: false, reason: '이체는 합칠 수 없어요' };
   const live = txs.filter((t) => t.status !== 'canceled');
@@ -76,10 +76,12 @@ export function mergeTransactions(txs: readonly Transaction[], newId: Uuid, now:
   if (net === 0) return { ok: false, reason: '합치면 0원이 돼요' };
   const amount = Math.abs(net);
   const kind: Transaction['kind'] = net > 0 ? 'income' : 'expense';
-  const lead = [...live].sort((a, b) => b.amount - a.amount)[0]!;
+  // 기준 내역: 사용자가 고른 것, 없으면 절대금액이 가장 큰 것.
+  const lead = (leadId ? txs.find((t) => t.id === leadId) : undefined) ?? [...live].sort((a, b) => b.amount - a.amount)[0]!;
 
-  // 분류: 대표 내역의 분류 비율을 새 금액에 맞춘다.
-  const leadSplits = lead.kind === kind ? lead.splits : [];
+  // 분류: 기준 내역의 분류 비율을 새 금액에 맞춘다. 기준이 반대 종류(예: 지출 합계인데 환불을 골랐을 때)면 같은 종류 중 가장 큰 내역의 분류.
+  const sameKind = lead.kind === kind ? lead : [...live].filter((t) => t.kind === kind).sort((a, b) => b.amount - a.amount)[0];
+  const leadSplits = sameKind?.splits ?? [];
   let splits: Split[] = [];
   if (leadSplits.length) {
     const total = leadSplits.reduce((s, p) => s + p.amount, 0);

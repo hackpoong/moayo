@@ -262,3 +262,34 @@ body {
     transition-duration: 1ms !important;
   }
 }
+
+/* + 버튼 메뉴: 원이 물방울처럼 위로 떨어져 나온다(살짝 튕김). */
+@keyframes drop-out {
+  0% {
+    transform: translateY(var(--drop-from, 80px)) scale(0.35);
+    opacity: 0;
+  }
+  55% {
+    transform: translateY(-8px) scale(1.06);
+    opacity: 1;
+  }
+  78% {
+    transform: translateY(3px) scale(0.97);
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes drop-in-out {
+  to {
+    transform: translateY(var(--drop-from, 80px)) scale(0.4);
+    opacity: 0;
+  }
+}
+.drop-out {
+  animation: drop-out 420ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.drop-in-out {
+  animation: drop-in-out 150ms ease-in forwards;
+}

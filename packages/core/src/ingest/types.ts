@@ -47,6 +47,8 @@ export interface ExtractedItem {
   line_items: ExtractedLine[];
   /** 가족 카테고리 목록 중 가장 알맞은 이름. 모르면 null. */
   category_hint: string | null;
+  /** 가게·품목에 어울리는 이모지(AI). 제목 앞에 붙인다. */
+  emoji?: string | null;
 }
 
 export interface Extraction {

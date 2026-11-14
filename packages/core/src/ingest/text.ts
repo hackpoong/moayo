@@ -2,8 +2,11 @@
 
 const NOISE = /(주식회사|\(주\)|㈜|\(유\)|유한회사|\s|[()[\]{}.,·\-_/'"])/g;
 
+/** 이모지·기호(🍔, ♨️, ★ 등)는 이름 비교에서 뺀다. 제목 앞에 이모지를 붙여도 같은 가게로 본다. */
+const SYMBOLS = /\p{Extended_Pictographic}|\p{So}|\p{Emoji_Modifier}|\u{FE0F}|\u{200D}|\u{20E3}/gu;
+
 export function normalizeMerchant(name: string | null | undefined): string {
-  return (name ?? '').toLowerCase().replace(NOISE, '');
+  return (name ?? '').toLowerCase().replace(SYMBOLS, '').replace(NOISE, '');
 }
 
 function bigrams(s: string): string[] {

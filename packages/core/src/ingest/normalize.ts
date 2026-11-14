@@ -5,6 +5,7 @@
 //  * 결제수단 이름을 가족의 결제수단에 연결하고, 카테고리는 같은 가맹점의 예전 기록을 우선한다.
 
 import { fromKst } from '../kst.ts';
+import { splitIconName } from '../iconName.ts';
 import { matchTransferRule, memberTransferRules } from '../rules.ts';
 import type { Category, Member, MerchantRule, PaymentMethod, Transaction, TransactionSource, TransferRule } from '../types.ts';
 import { isWrapperLabel, merchantSimilarity, normalizeMerchant } from './text.ts';
@@ -150,7 +151,9 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
     const rule = kind === 'transfer' ? null : (ctx.merchantRules ?? []).find((r) => !r.deleted_at && r.match_key === normalizeMerchant(rawMerchant));
     const ruleMethod = rule?.set_payment_method_id ? ctx.paymentMethods.find((m) => m.id === rule.set_payment_method_id && !m.deleted_at) : undefined;
     const method = ruleMethod ?? resolvePaymentMethod(item.payment_label, item.card_last4, ctx.paymentMethods);
-    const merchant = rule?.set_merchant?.trim() || rawMerchant;
+    const named = rule?.set_merchant?.trim() || rawMerchant;
+    // AI 가 고른 이모지를 제목 앞에 붙인다(이미 이모지로 시작하면 그대로).
+    const merchant = item.emoji && splitIconName(named).icon === null ? `${item.emoji}${named}`.slice(0, 60) : named;
     if (rule) notes.push(`바꾸기 규칙: ‘${rawMerchant}’`);
 
     candidates.push({

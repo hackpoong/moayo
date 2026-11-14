@@ -18,7 +18,7 @@ export const EXTRACTION_SCHEMA = {
         additionalProperties: false,
         required: [
           'date', 'time', 'merchant', 'amount', 'original_amount', 'kind', 'status', 'payment_label', 'card_last4', 'approval_no',
-          'greyed', 'foreign_currency', 'foreign_amount', 'installment_months', 'memo', 'line_items', 'category_hint',
+          'greyed', 'foreign_currency', 'foreign_amount', 'installment_months', 'memo', 'line_items', 'category_hint', 'emoji',
         ],
         properties: {
           date: { ...nullable('string'), description: 'YYYY-MM-DD' },
@@ -46,6 +46,7 @@ export const EXTRACTION_SCHEMA = {
             },
           },
           category_hint: nullable('string'),
+          emoji: { ...nullable('string'), description: '가게·품목에 가장 잘 어울리는 이모지 1개. 모르겠으면 null' },
         },
       },
     },
@@ -108,6 +109,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 
 [카테고리]
 category_hint 는 아래 목록에서 가장 알맞은 이름을 그대로 고르고, 알맞은 것이 없으면 null.
+emoji 는 가게·품목에 가장 잘 어울리는 이모지 하나(예: 맥도날드 🍔, 수목원 🌴, 찜질방 ♨️, 주유소 ⛽, 약국 💊). 확실하지 않으면 null.
 
 [이 가족의 정보 — 위 규칙은 늘 같고, 아래만 바뀐다]
 - 오늘: ${'{TODAY}'}
