@@ -1,11 +1,11 @@
 // 기기 DB 에 쓰고 outbox 에 넣은 뒤 동기화를 부른다. 화면은 기다리지 않는다.
 
-import type { Category, PaymentMethod, Tag, Transaction, TransferRule } from '@moayo/core';
+import type { Category, MerchantRule, PaymentMethod, Tag, Transaction, TransferRule } from '@moayo/core';
 import { useCallback } from 'react';
 import { useDataContext } from './dataContext.ts';
 import type { PushTable, RowByTable } from './localDb.ts';
 
-type Editable = Transaction | PaymentMethod | Category | Tag | TransferRule;
+type Editable = Transaction | PaymentMethod | Category | Tag | TransferRule | MerchantRule;
 
 export function newId(): string {
   return crypto.randomUUID();

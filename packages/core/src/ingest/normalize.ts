@@ -6,7 +6,7 @@
 
 import { fromKst } from '../kst.ts';
 import { matchTransferRule, memberTransferRules } from '../rules.ts';
-import type { Category, Member, PaymentMethod, Transaction, TransactionSource, TransferRule } from '../types.ts';
+import type { Category, Member, MerchantRule, PaymentMethod, Transaction, TransactionSource, TransferRule } from '../types.ts';
 import { isWrapperLabel, merchantSimilarity, normalizeMerchant } from './text.ts';
 import type { Candidate, ExtractedItem, Extraction, SourceKind } from './types.ts';
 
@@ -21,6 +21,8 @@ export interface NormalizeContext {
   fallbackDate: string;
   /** 구성원의 '이체로 볼 이름'(실명 등). 이 이름과 주고받은 돈은 이체다. */
   members?: Pick<Member, 'id' | 'household_id' | 'display_name' | 'emoji' | 'aliases' | 'deleted_at'>[];
+  /** '앞으로도 계속 바꾸기' 규칙. */
+  merchantRules?: Pick<MerchantRule, 'match_key' | 'set_merchant' | 'set_category_id' | 'set_payment_method_id' | 'deleted_at'>[];
 }
 
 const SOURCE_KIND_LABEL: Record<SourceKind, string> = {
@@ -144,8 +146,12 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
 
     const date = fixYear(item.date && /^\d{4}-\d{2}-\d{2}$/.test(item.date) ? item.date : ctx.fallbackDate, ctx.fallbackDate, extraction.source_kind);
     const time = item.time && /^\d{1,2}:\d{2}$/.test(item.time) ? item.time.padStart(5, '0') : null;
-    const method = resolvePaymentMethod(item.payment_label, item.card_last4, ctx.paymentMethods);
-    const merchant = item.merchant.trim().slice(0, 60);
+    const rawMerchant = item.merchant.trim().slice(0, 60);
+    const rule = kind === 'transfer' ? null : (ctx.merchantRules ?? []).find((r) => !r.deleted_at && r.match_key === normalizeMerchant(rawMerchant));
+    const ruleMethod = rule?.set_payment_method_id ? ctx.paymentMethods.find((m) => m.id === rule.set_payment_method_id && !m.deleted_at) : undefined;
+    const method = ruleMethod ?? resolvePaymentMethod(item.payment_label, item.card_last4, ctx.paymentMethods);
+    const merchant = rule?.set_merchant?.trim() || rawMerchant;
+    if (rule) notes.push(`바꾸기 규칙: ‘${rawMerchant}’`);
 
     candidates.push({
       index,
@@ -157,13 +163,16 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
       has_time: !!time,
       date,
       merchant,
-      memo: importMemo(item, merchant, extraction.source_kind, amount),
+      memo: importMemo(item, rawMerchant, extraction.source_kind, amount),
       payment_method_id: method?.id ?? null,
       payment_label: item.payment_label?.trim() || null,
       card_last4: item.card_last4,
       approval_no: item.approval_no,
       installment_months: Math.min(60, Math.max(1, item.installment_months ?? 1)),
-      category_id: categoryFor(merchant, kind, item.category_hint, ctx),
+      category_id:
+        rule?.set_category_id && ctx.categories.some((x) => x.id === rule.set_category_id && !x.deleted_at)
+          ? rule.set_category_id
+          : categoryFor(merchant, kind, item.category_hint, ctx),
       line_items: item.line_items ?? [],
       source: ctx.source,
       notes,

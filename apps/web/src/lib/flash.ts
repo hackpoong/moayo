@@ -27,7 +27,7 @@ export function useIsFlashing(id: string): boolean {
 }
 
 /** 짧은 진동(안드로이드). 지원 안 되면 조용히 넘어간다. */
-export function haptic(ms = 8): void {
+export function haptic(ms: number | number[] = 8): void {
   try {
     navigator.vibrate?.(ms);
   } catch {

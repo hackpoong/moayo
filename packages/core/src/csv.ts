@@ -2,7 +2,7 @@ import { toKstDate, toKstTime } from './kst.ts';
 import type { Category, Member, PaymentMethod, Tag, Transaction } from './types.ts';
 
 const KIND_LABEL = { expense: '지출', income: '수입', transfer: '이체' } as const;
-const STATUS_LABEL = { confirmed: '', review: '확인 필요', canceled: '취소' } as const;
+const STATUS_LABEL = { confirmed: '', review: '확인 필요', canceled: '취소', merged: '합쳐짐' } as const;
 
 function cell(value: string | number | null | undefined): string {
   const s = value === null || value === undefined ? '' : String(value);

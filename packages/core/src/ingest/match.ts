@@ -341,6 +341,10 @@ export function appendMemoLines(memo: string | null, add: string | null): string
 }
 
 function merge(c: Candidate, t: Transaction, ctx: MatchContext, score: number | null, opts: { correctAmount: boolean }): Decision {
+  // 사용자가 다른 내역과 합친 결제: 다시 불러와도 되살리지 않는다.
+  if (t.status === 'merged') {
+    return { candidate: c, action: 'duplicate', tx: t, target_id: t.id, filled_fields: [], score, reason: '합친 내역에 들어 있는 결제라 넣지 않았습니다' };
+  }
   const next: Transaction = { ...t, field_sources: { ...t.field_sources } };
   const filled: string[] = [];
   const set = <K extends keyof Transaction>(key: K, value: Transaction[K]) => {

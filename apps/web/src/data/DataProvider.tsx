@@ -17,6 +17,7 @@ const emptyOverlay = (): Overlay => ({
   categories: new Map(),
   tags: new Map(),
   transfer_rules: new Map(),
+  merchant_rules: new Map(),
 });
 
 /** 기기 DB 결과 위에, 방금 저장해서 아직 기기 DB 에 안 들어간 행을 덮어씌운다. */
@@ -53,6 +54,7 @@ export function DataProvider({ userId, householdId, children }: { userId: string
   const categoriesRaw = useLiveQuery(() => db.categories.where('household_id').equals(householdId).toArray(), [db, householdId]);
   const tagsRaw = useLiveQuery(() => db.tags.where('household_id').equals(householdId).toArray(), [db, householdId]);
   const rulesRaw = useLiveQuery(() => db.transfer_rules.where('household_id').equals(householdId).toArray(), [db, householdId]);
+  const renamesRaw = useLiveQuery(() => db.merchant_rules.where('household_id').equals(householdId).toArray(), [db, householdId]);
   const membersRaw = useLiveQuery(() => db.members.where('household_id').equals(householdId).toArray(), [db, householdId]);
   const pendingCount = useLiveQuery(() => db.outbox.where('household_id').equals(householdId).count(), [db, householdId]);
 
@@ -82,6 +84,7 @@ export function DataProvider({ userId, householdId, children }: { userId: string
       categories: categoriesRaw,
       tags: tagsRaw,
       transfer_rules: rulesRaw,
+      merchant_rules: renamesRaw,
     };
     // 외부(기기 DB) 결과에 맞춰 덮어쓴 행을 정리하는 것이라 effect 안에서 상태를 바꾼다.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -108,16 +111,28 @@ export function DataProvider({ userId, householdId, children }: { userId: string
       }
       return changed ? next : prev;
     });
-  }, [transactionsRaw, paymentMethodsRaw, categoriesRaw, tagsRaw, rulesRaw]);
+  }, [transactionsRaw, paymentMethodsRaw, categoriesRaw, tagsRaw, rulesRaw, renamesRaw]);
 
-  const transactions = useMemo(() => {
+  const txState = useMemo(() => {
     const rows = merge(transactionsRaw, overlay.transactions);
-    return rows ? live(rows).sort(byRecent) : undefined;
+    if (!rows) return undefined;
+    const list: Transaction[] = [];
+    const mergedInto = new Map<string, Transaction[]>();
+    for (const t of rows) {
+      if (t.deleted_at) continue;
+      if (t.status === 'merged') {
+        if (t.linked_tx_id) mergedInto.set(t.linked_tx_id, [...(mergedInto.get(t.linked_tx_id) ?? []), t]);
+        continue;
+      }
+      list.push(t);
+    }
+    return { transactions: list.sort(byRecent), mergedInto };
   }, [transactionsRaw, overlay.transactions]);
   const paymentMethodsAll = useMemo(() => merge(paymentMethodsRaw, overlay.payment_methods), [paymentMethodsRaw, overlay.payment_methods]);
   const categoriesAll = useMemo(() => merge(categoriesRaw, overlay.categories), [categoriesRaw, overlay.categories]);
   const tagsAll = useMemo(() => merge(tagsRaw, overlay.tags), [tagsRaw, overlay.tags]);
   const rules = useMemo(() => merge(rulesRaw, overlay.transfer_rules), [rulesRaw, overlay.transfer_rules]);
+  const renames = useMemo(() => merge(renamesRaw, overlay.merchant_rules), [renamesRaw, overlay.merchant_rules]);
 
   const lookups = useMemo(() => {
     if (!paymentMethodsAll || !categoriesAll || !tagsAll || !membersRaw) return null;
@@ -137,9 +152,16 @@ export function DataProvider({ userId, householdId, children }: { userId: string
   }, [paymentMethodsAll, categoriesAll, tagsAll, membersRaw]);
 
   const data = useMemo<HouseholdData | null>(() => {
-    if (!transactions || !lookups || !rules) return null;
-    return { transactions, transferRules: live(rules as TransferRule[]), pendingCount: pendingCount ?? 0, ...lookups };
-  }, [transactions, lookups, rules, pendingCount]);
+    if (!txState || !lookups || !rules) return null;
+    return {
+      transactions: txState.transactions,
+      mergedInto: txState.mergedInto,
+      merchantRules: live(renames ?? []),
+      transferRules: live(rules as TransferRule[]),
+      pendingCount: pendingCount ?? 0,
+      ...lookups,
+    };
+  }, [txState, lookups, rules, renames, pendingCount]);
 
   const value = useMemo<DataContextValue>(
     () => ({ db, engine, householdId, data, status, applyOptimistic, settleOptimistic }),

@@ -15,6 +15,7 @@ import {
   USER_INSTRUCTION_TEXT,
   type Category,
   type Member,
+  type MerchantRule,
   type Decision,
   type Extraction,
   type PaymentMethod,
@@ -210,7 +211,7 @@ async function ingest(admin: SupabaseClient, body: IngestBody, userId: string, m
 
   try {
     // ── 가족 설정 ──────────────────────────────────────────────────────────
-    const [pms, cats, rules, history, people] = await Promise.all([
+    const [pms, cats, rules, history, people, renames] = await Promise.all([
       admin.from('payment_methods').select('*').eq('household_id', householdId).is('deleted_at', null),
       admin.from('categories').select('*').eq('household_id', householdId).is('deleted_at', null),
       admin.from('transfer_rules').select('*').eq('household_id', householdId).is('deleted_at', null),
@@ -222,6 +223,7 @@ async function ingest(admin: SupabaseClient, body: IngestBody, userId: string, m
         .order('occurred_at', { ascending: false })
         .limit(1500),
       admin.from('members').select('id, household_id, display_name, emoji, aliases, deleted_at').eq('household_id', householdId).is('deleted_at', null),
+      admin.from('merchant_rules').select('match_key, set_merchant, set_category_id, set_payment_method_id, deleted_at').eq('household_id', householdId).is('deleted_at', null),
     ]);
     const paymentMethods = (pms.data ?? []) as PaymentMethod[];
     const categories = (cats.data ?? []) as Category[];
@@ -285,6 +287,7 @@ async function ingest(admin: SupabaseClient, body: IngestBody, userId: string, m
       history: (history.data ?? []) as Transaction[],
       fallbackDate: today,
       members: (people.data ?? []) as Member[],
+      merchantRules: (renames.data ?? []) as MerchantRule[],
     });
 
     let existing: Transaction[] = [];

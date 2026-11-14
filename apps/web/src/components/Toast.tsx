@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ToastContext, type ToastInput } from './toastContext.ts';
 
@@ -26,12 +26,28 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(() => show, [show]);
 
+  // 시트(아래에서 올라오는 창)가 열려 있으면 그 버튼을 가리지 않게 화면 위쪽에 띄운다.
+  const [onTop, setOnTop] = useState(false);
+  const visible = !!toast;
+  useEffect(() => {
+    if (!visible) return;
+    const check = () => setOnTop(!!document.querySelector('[role="dialog"]'));
+    check();
+    const mo = new MutationObserver(check);
+    mo.observe(document.body, { childList: true });
+    return () => mo.disconnect();
+  }, [visible]);
+
   return (
     <ToastContext.Provider value={value}>
       {children}
       {toast
         ? createPortal(
-            <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+9rem)] z-50 flex justify-center px-4 md:bottom-8">
+            <div
+              className={`pointer-events-none fixed inset-x-0 z-50 flex justify-center px-4 ${
+                onTop ? 'top-[calc(env(safe-area-inset-top)+0.75rem)]' : 'bottom-[calc(env(safe-area-inset-bottom)+9rem)] md:bottom-8'
+              }`}
+            >
               <div
                 role="status"
                 key={toast.id}

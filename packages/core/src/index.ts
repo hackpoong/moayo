@@ -13,3 +13,4 @@ export * from './allocate.ts';
 export * from './voice.ts';
 export * from './iconName.ts';
 export * from './cardStatement.ts';
+export * from './bulk.ts';

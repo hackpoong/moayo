@@ -36,7 +36,7 @@ export type LedgerTx = Pick<
 
 /** 집계에 넣을 내역인지. */
 export function isCounted(tx: Pick<Transaction, 'status' | 'deleted_at'>): boolean {
-  return tx.deleted_at === null && tx.status !== 'canceled';
+  return tx.deleted_at === null && tx.status !== 'canceled' && tx.status !== 'merged';
 }
 
 /**

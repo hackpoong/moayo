@@ -131,8 +131,19 @@ export interface TransferRule extends SyncedRow {
   enabled: boolean;
 }
 
+/** '앞으로도 계속 바꾸기': 원래 이름이 match_key 인 내역이 들어오면 제목·분류·자산을 바꿔 넣는다. */
+export interface MerchantRule extends SyncedRow {
+  /** normalizeMerchant 한 원래 이름. */
+  match_key: string;
+  set_merchant: string | null;
+  set_category_id: Uuid | null;
+  set_payment_method_id: Uuid | null;
+  created_by: Uuid | null;
+}
+
 export type TransactionKind = 'expense' | 'income' | 'transfer';
-export type TransactionStatus = 'confirmed' | 'review' | 'canceled';
+/** merged: 다른 내역으로 합쳐짐(목록·합계에서 빠지고 linked_tx_id 가 합친 내역). */
+export type TransactionStatus = 'confirmed' | 'review' | 'canceled' | 'merged';
 export type TransactionSource = 'manual' | 'image' | 'screenshot' | 'statement' | 'sms' | 'push' | 'share';
 
 export interface Split {

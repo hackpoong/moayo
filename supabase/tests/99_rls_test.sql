@@ -223,5 +223,15 @@ select test.ok(test.throws(format($$insert into public.transactions (household_i
 select test.ok(test.affected(format($$insert into public.transactions (household_id, kind, amount, occurred_at, cash_date, payments)
   values (%L, 'expense', 7000, now(), current_date, '[{"amount":3000},{"amount":4000}]')$$, :'ha')) = 1, '자산별 금액 합이 맞으면 저장');
 
+-- ── 병합 상태, 바꾸기 규칙 ───────────────────────────────────────────────
+select test.ok(test.affected(format($$insert into public.transactions (household_id, kind, amount, occurred_at, cash_date, status)
+  values (%L, 'expense', 800, now(), current_date, 'merged')$$, :'ha')) = 1, '합쳐진 내역 상태 저장');
+select test.ok(test.affected(format($$insert into public.merchant_rules (household_id, match_key, set_merchant) values (%L, '에브리포터블', '휴대폰충전')$$, :'ha')) = 1,
+  '앨리스: 바꾸기 규칙 추가');
+select test.ok((select created_by from public.merchant_rules limit 1) = :'alice', '규칙 만든 사람 기록');
+select test.login(:'carol');
+select test.ok((select count(*) from public.merchant_rules) = 0, '캐럴: 다른 가족 규칙 안 보임');
+select test.login(:'alice');
+
 reset role;
 \echo 'ALL DB TESTS PASSED'

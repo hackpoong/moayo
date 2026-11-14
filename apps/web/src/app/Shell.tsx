@@ -3,6 +3,8 @@ import { useCallback, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { SyncBadge } from '../components/SyncBadge.tsx';
 import { ToastProvider } from '../components/Toast.tsx';
+import { BulkRenameProvider } from '../bulk/BulkRename.tsx';
+import { SelectionProvider } from '../bulk/Selection.tsx';
 import { Logo } from '../components/ui.tsx';
 import { DataProvider } from '../data/DataProvider.tsx';
 import { EditorContext, type EditorRequest } from '../editor/editorContext.ts';
@@ -33,7 +35,11 @@ export function Shell() {
   return (
     <DataProvider key={household.householdId} userId={session.user.id} householdId={household.householdId}>
       <ToastProvider>
-        <ShellLayout />
+        <BulkRenameProvider>
+          <SelectionProvider>
+            <ShellLayout />
+          </SelectionProvider>
+        </BulkRenameProvider>
       </ToastProvider>
     </DataProvider>
   );

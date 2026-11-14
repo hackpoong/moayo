@@ -586,3 +586,14 @@ describe('불러온 내역의 메모', () => {
     expect(appendMemoLines(null, null)).toBeNull();
   });
 });
+
+describe('앞으로도 계속 바꾸기 규칙', () => {
+  it('원래 이름이 맞으면 제목·분류·자산을 바꾸고, 원래 이름은 메모에 남긴다', () => {
+    const [c] = normalizeExtraction(
+      extraction([{ merchant: '에브리 포터블', amount: 800, payment_label: '토스' }]),
+      ctx({ merchantRules: [{ match_key: '에브리포터블', set_merchant: '휴대폰충전', set_category_id: 'c-food', set_payment_method_id: 'pm-card', deleted_at: null }] }),
+    );
+    expect([c!.merchant, c!.category_id, c!.payment_method_id]).toEqual(['휴대폰충전', 'c-food', 'pm-card']);
+    expect(c!.memo).toContain('업체명 : 에브리 포터블');
+  });
+});

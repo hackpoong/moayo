@@ -10,6 +10,7 @@ import {
   hasOperator,
   matchTransferRule,
   parseSpokenEntry,
+  unmergeTransactions,
   memberTransferRules,
   splitsAreValid,
   suggestFromTitle,
@@ -29,6 +30,7 @@ import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { MemberBadge } from '../components/MemberBadge.tsx';
 import { Sheet } from '../components/Sheet.tsx';
 import { useToast } from '../components/toastContext.ts';
+import { useBulkRename } from '../bulk/bulkContext.ts';
 import { Button } from '../components/ui.tsx';
 import { useData } from '../data/dataContext.ts';
 import { baseRow, newId, useMutations } from '../data/mutations.ts';
@@ -63,6 +65,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   const { save, remove } = useMutations();
   const openEditor = useOpenEditor();
   const toast = useToast();
+  const askBulkRename = useBulkRename();
   const titleRef = useRef<HTMLInputElement>(null);
 
   const activeMembers = useMemo(() => data.members.filter((m) => !m.deleted_at), [data.members]);
@@ -375,8 +378,10 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
 
   const submit = (close: () => void) => {
     if (!valid) return;
-    persist(buildRow());
+    const row = buildRow();
+    persist(row);
     close();
+    if (original) askBulkRename(original, row);
   };
 
   /** 저장하고 바로 다음 입력. 날짜·자산·쓴 사람은 그대로 두고 나머지는 비운다. */
@@ -400,6 +405,16 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   const resolveDuplicate = (same: boolean, close: () => void) => {
     if (!original) return;
     void (same ? remove('transactions', original) : save('transactions', { ...original, status: 'confirmed', review: null }));
+    close();
+  };
+
+  const mergedChildren = original ? (data.mergedInto.get(original.id) ?? []) : [];
+  const unmerge = (close: () => void) => {
+    if (!original) return;
+    const r = unmergeTransactions(original, mergedChildren, new Date().toISOString());
+    for (const t of r.restored) void save('transactions', t);
+    void save('transactions', r.removed);
+    toast({ message: `${r.restored.length}건으로 다시 나눴어요` });
     close();
   };
 
@@ -807,6 +822,28 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
             aria-label="메모"
             className="block w-full resize-none border-b border-line bg-transparent py-2.5 text-base leading-relaxed outline-none placeholder:text-muted/60 focus:border-brand"
           />
+
+          {original && mergedChildren.length ? (
+            <details className="rounded-xl bg-surface-2 px-4 py-3">
+              <summary className="cursor-pointer text-[15px] font-semibold">합친 내역 {mergedChildren.length}건</summary>
+              <ul className="mt-2 space-y-1.5 text-sm">
+                {mergedChildren.map((t) => (
+                  <li key={t.id} className="flex justify-between gap-2">
+                    <span className="truncate">
+                      {t.merchant ?? '이름 없음'} · {shortDate(toKstDate(t.occurred_at))}
+                    </span>
+                    <span className={`tabular shrink-0 ${t.status === 'canceled' || t.kind === 'transfer' ? 'text-muted line-through' : t.kind === 'income' ? 'text-income' : 'text-expense'}`}>
+                      {t.kind === 'income' ? '+' : '−'}
+                      {formatAmount(t.amount)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <button type="button" onClick={() => unmerge(close)} className="mt-3 text-sm font-semibold text-brand">
+                병합 풀기 (원래대로 나누기)
+              </button>
+            </details>
+          ) : null}
 
           {original && original.source !== 'manual' ? (
             <p className="text-xs text-muted">
