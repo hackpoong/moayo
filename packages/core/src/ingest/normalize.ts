@@ -5,6 +5,7 @@
 //  * 결제수단 이름을 가족의 결제수단에 연결하고, 카테고리는 같은 가맹점의 예전 기록을 우선한다.
 
 import { fromKst } from '../kst.ts';
+import { cardHintMatches } from '../card.ts';
 import { splitIconName } from '../iconName.ts';
 import { matchTransferRule, memberTransferRules } from '../rules.ts';
 import type { Category, Member, MerchantRule, PaymentMethod, Transaction, TransactionSource, TransferRule } from '../types.ts';
@@ -68,11 +69,14 @@ export function resolvePaymentMethod(
   label: string | null,
   last4: string | null,
   methods: readonly PaymentMethod[],
+  numberHint?: string | null,
 ): PaymentMethod | null {
   const live = methods.filter((m) => !m.deleted_at);
-  if (last4) {
-    const byLast4 = live.filter((m) => m.last4 && m.last4 === last4);
-    if (byLast4.length === 1) return byLast4[0]!;
+  // 카드번호(어떤 모양이든)나 끝 4자리가 맞는 카드가 하나면 그것.
+  const hint = [numberHint, last4].filter(Boolean).join(' ');
+  if (hint) {
+    const byNumber = live.filter((m) => (m.card_number || m.last4) && cardHintMatches(hint, m.card_number ?? null, m.last4));
+    if (byNumber.length === 1) return byNumber[0]!;
   }
   if (!label) return null;
   const target = compact(label);
@@ -150,7 +154,7 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
     const rawMerchant = item.merchant.trim().slice(0, 60);
     const rule = kind === 'transfer' ? null : (ctx.merchantRules ?? []).find((r) => !r.deleted_at && r.match_key === normalizeMerchant(rawMerchant));
     const ruleMethod = rule?.set_payment_method_id ? ctx.paymentMethods.find((m) => m.id === rule.set_payment_method_id && !m.deleted_at) : undefined;
-    const method = ruleMethod ?? resolvePaymentMethod(item.payment_label, item.card_last4, ctx.paymentMethods);
+    const method = ruleMethod ?? resolvePaymentMethod(item.payment_label, item.card_last4, ctx.paymentMethods, item.card_number_hint);
     const named = rule?.set_merchant?.trim() || rawMerchant;
     // AI 가 고른 이모지를 제목 앞에 붙인다(이미 이모지로 시작하면 그대로).
     const merchant = item.emoji && splitIconName(named).icon === null ? `${item.emoji}${named}`.slice(0, 60) : named;

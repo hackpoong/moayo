@@ -66,7 +66,7 @@ function LinkSheet({ label, onClose }: { label: string; onClose: () => void }) {
       type: guessType(label),
       issuer: null,
       last4: null,
-      owner_member_id: null,
+      owner_member_id: household.memberId,
       aliases: [label],
       billing: null,
       color: null,

@@ -17,7 +17,7 @@ export const EXTRACTION_SCHEMA = {
         type: 'object',
         additionalProperties: false,
         required: [
-          'date', 'time', 'merchant', 'amount', 'original_amount', 'kind', 'status', 'payment_label', 'card_last4', 'approval_no',
+          'date', 'time', 'merchant', 'amount', 'original_amount', 'kind', 'status', 'payment_label', 'card_last4', 'card_number_hint', 'approval_no',
           'greyed', 'foreign_currency', 'foreign_amount', 'installment_months', 'memo', 'line_items', 'category_hint', 'emoji',
         ],
         properties: {
@@ -30,6 +30,7 @@ export const EXTRACTION_SCHEMA = {
           status: { type: 'string', enum: ['approved', 'canceled', 'partial_canceled', 'declined'] },
           payment_label: nullable('string'),
           card_last4: nullable('string'),
+          card_number_hint: nullable('string'),
           approval_no: nullable('string'),
           greyed: { type: 'boolean' },
           foreign_currency: nullable('string'),
@@ -91,6 +92,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 - 가맹점 이름 아래 작은 글씨로 적힌 결제수단(예: "네이버 현대카드", "달달하나 체크카드", "내 하나은행 계좌", "토스제공 · 현금찾기")을 payment_label 에 그대로 옮긴다. 없으면 null.
 - 그 아래 줄에 따로 적힌 짧은 글(예: "옷 수선")은 memo.
 - 카드번호 끝 4자리, 승인번호가 보이면 card_last4, approval_no.
+- 카드번호가 일부라도 보이면 보이는 모양 그대로 card_number_hint 에 적는다(가림표 포함, 예: "4111-22**-****-1234", "411122", "*1234").
 
 [원문 종류별]
 - 지역화폐 앱(여민전·온통대전 등) 이용내역: 결제, "결제시 캐시백 지급", 충전을 모두 적는다. payment_label 은 앱·카드 이름(예: "여민전", "온통대전 꿈돌이카드").

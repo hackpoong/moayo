@@ -1,6 +1,7 @@
-// 가족 금고(카드 정보) 열기·잠그기.
-//  * 비밀번호로 연 키는 이 탭 메모리에만 2분 두고, 앱을 다른 화면으로 넘기면 바로 잊는다.
-//  * '이 기기에서 지문으로 열기'를 켜면 꺼낼 수 없는 키를 이 기기 IndexedDB 에 두고, 쓸 때마다 지문·얼굴 확인을 거친다.
+// 가족 금고(카드 CVC) 열기.
+//  * 한 번 비밀번호로 열면 꺼낼 수 없는 키를 이 기기 IndexedDB 에 기억해서, 다음부터는 👁 만 누르면 바로 보인다.
+//  * '볼 때마다 지문 확인'을 켜면 쓸 때마다 지문·얼굴 확인을 거친다.
+//  * 다른 기기는 처음 한 번 비밀번호가 필요하다(서버에는 암호문만 있다).
 
 import { createVault, openVault, type VaultMeta } from './vaultCrypto.ts';
 import { db as supabaseClient } from './supabase.ts';
@@ -62,7 +63,8 @@ export async function unlockWithPassword(hid: string, meta: VaultMeta, password:
 interface DeviceKey {
   hid: string;
   key: CryptoKey;
-  credentialId: ArrayBuffer;
+  /** 있으면 쓸 때마다 지문·얼굴 확인. */
+  credentialId?: ArrayBuffer;
 }
 
 function idb(): Promise<IDBDatabase> {
@@ -102,42 +104,53 @@ export async function hasDeviceKey(hid: string): Promise<boolean> {
 
 const random = (n: number) => crypto.getRandomValues(new Uint8Array(n));
 
-/** 지문·얼굴 확인을 등록하고, 열린 키를 이 기기에 둔다. */
-export async function rememberOnDevice(hid: string, key: CryptoKey): Promise<void> {
-  const cred = (await navigator.credentials.create({
-    publicKey: {
-      rp: { name: '모아요' },
-      user: { id: random(16), name: 'moayo-vault', displayName: '모아요 카드 금고' },
-      challenge: random(32),
-      pubKeyCredParams: [
-        { type: 'public-key', alg: -7 },
-        { type: 'public-key', alg: -257 },
-      ],
-      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
-      timeout: 60_000,
-    },
-  })) as PublicKeyCredential | null;
-  if (!cred) throw new Error('지문 등록이 취소되었습니다.');
-  await idbDo('readwrite', (s) => s.put({ hid, key, credentialId: cred.rawId } satisfies DeviceKey));
+/** 열린 키를 이 기기에 기억한다. withBiometric 이면 지문·얼굴 확인을 등록해서 쓸 때마다 묻는다. */
+export async function rememberOnDevice(hid: string, key: CryptoKey, withBiometric = false): Promise<void> {
+  let credentialId: ArrayBuffer | undefined;
+  if (withBiometric) {
+    const cred = (await navigator.credentials.create({
+      publicKey: {
+        rp: { name: '모아요' },
+        user: { id: random(16), name: 'moayo-vault', displayName: '모아요 카드 금고' },
+        challenge: random(32),
+        pubKeyCredParams: [
+          { type: 'public-key', alg: -7 },
+          { type: 'public-key', alg: -257 },
+        ],
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+        timeout: 60_000,
+      },
+    })) as PublicKeyCredential | null;
+    if (!cred) throw new Error('지문 등록이 취소되었습니다.');
+    credentialId = cred.rawId;
+  }
+  await idbDo('readwrite', (s) => s.put({ hid, key, credentialId } satisfies DeviceKey));
 }
 
 export async function forgetOnDevice(hid: string): Promise<void> {
   await idbDo('readwrite', (s) => s.delete(hid));
 }
 
-/** 지문·얼굴 확인을 통과하면 키. */
-export async function unlockWithBiometric(hid: string): Promise<CryptoKey | null> {
-  const stored = await idbDo<DeviceKey | undefined>('readonly', (s) => s.get(hid));
+/** 이 기기에 기억한 키(지문 확인을 켰으면 확인을 거친 뒤). 없으면 null. */
+export async function unlockOnDevice(hid: string): Promise<CryptoKey | null> {
+  const stored = await idbDo<DeviceKey | undefined>('readonly', (s) => s.get(hid)).catch(() => undefined);
   if (!stored) return null;
-  const ok = await navigator.credentials.get({
-    publicKey: {
-      challenge: random(32),
-      allowCredentials: [{ type: 'public-key', id: stored.credentialId }],
-      userVerification: 'required',
-      timeout: 60_000,
-    },
-  });
-  if (!ok) return null;
+  if (stored.credentialId) {
+    const ok = await navigator.credentials.get({
+      publicKey: {
+        challenge: random(32),
+        allowCredentials: [{ type: 'public-key', id: stored.credentialId }],
+        userVerification: 'required',
+        timeout: 60_000,
+      },
+    });
+    if (!ok) return null;
+  }
   keep(hid, stored.key);
   return stored.key;
+}
+
+/** 지금 쓸 수 있는 키: 메모리 → 이 기기 기억. 없으면 null(비밀번호 필요). */
+export async function availableKey(hid: string): Promise<CryptoKey | null> {
+  return unlockedKey(hid) ?? (await unlockOnDevice(hid).catch(() => null));
 }

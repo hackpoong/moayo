@@ -2,6 +2,7 @@
 // 카드사·은행마다 문구가 조금씩 다르지만 '카드사 + 승인/취소 + 금액 + 날짜·시각 + 가맹점' 뼈대는 같다.
 
 import type { Extraction, ExtractedItem } from './types.ts';
+import { cardNumberTokens } from '../card.ts';
 
 const ISSUERS = [
   'KB국민', '국민', '신한', '현대', '삼성', '롯데', '하나', '우리', 'NH농협', '농협', 'NH', 'BC', '비씨', '씨티', 'IBK', '기업',
@@ -32,6 +33,7 @@ function baseItem(): ExtractedItem {
     status: 'approved',
     payment_label: null,
     card_last4: null,
+    card_number_hint: null,
     approval_no: null,
     greyed: false,
     foreign_currency: null,
@@ -65,6 +67,8 @@ export function parseSms(raw: string, today: string): Extraction | null {
   const last4 = LAST4_RE.exec(text);
   item.card_last4 = last4 ? (last4[1] ?? last4[2] ?? last4[3] ?? null) : null;
   if (item.card_last4 && item.card_last4.length < 4) item.card_last4 = null;
+  // 카드번호가 가림표와 함께 찍힌 경우(4111-22**-****-1234, 411122******1234)는 그대로 두어 자산 연결에 쓴다.
+  item.card_number_hint = cardNumberTokens(text).find((t) => t.includes('*')) ?? (last4 ? last4[0] : null);
   if (/취소/.test(text)) item.status = 'canceled';
   const inst = /(\d{1,2})\s*개월/.exec(text);
   if (inst) item.installment_months = Number(inst[1]);

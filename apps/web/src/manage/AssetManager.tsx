@@ -12,6 +12,9 @@ import {
   toKstDate,
   typicalStartDay,
   luhnValid,
+  cardDigits,
+  formatCardNumber,
+  normalizeExpiry,
   type ScannedCard,
   type PaymentMethod,
   type PaymentMethodType,
@@ -27,9 +30,9 @@ import { useData } from '../data/dataContext.ts';
 import { baseRow, useMutations } from '../data/mutations.ts';
 import { assetIcon, LINKABLE_TYPES } from '../lib/assets.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
-import { unlockedKey } from '../lib/vault.ts';
-import { seal, type CardSecret } from '../lib/vaultCrypto.ts';
-import { CardScan, CardSecretSection } from './CardFields.tsx';
+import { availableKey } from '../lib/vault.ts';
+import { seal } from '../lib/vaultCrypto.ts';
+import { CardScan, CvcField } from './CardFields.tsx';
 import { VaultSheet } from './VaultSheet.tsx';
 
 const CARD_TYPES: PaymentMethodType[] = ['credit_card', 'check_card', 'prepaid_card'];
@@ -196,16 +199,18 @@ export function AssetEditor({
   const [type, setType] = useState<PaymentMethodType | null>(initial?.type ?? null);
   const [picking, setPicking] = useState(!initial);
   const [text, setText] = useState(initial ? joinIconName(initial.icon, initial.name) : '');
-  const [ownerId, setOwnerId] = useState<string | null>(initial ? initial.owner_member_id : defaultOwnerId);
+  // 자산 주인은 한 사람(💛/💙). 주인이 없던 예전 자산은 나로 미리 골라 둔다.
+  const [ownerId, setOwnerId] = useState<string>((initial?.owner_member_id ?? defaultOwnerId ?? household.memberId) as string);
   const [linked, setLinked] = useState<string | null>(initial?.linked_account_id ?? null);
-  const [last4, setLast4] = useState(initial?.last4 ?? '');
+  // 카드번호는 전체(또는 끝 4자리만) 그대로 보인다. CVC 만 암호화.
+  const [cardNumber, setCardNumber] = useState(initial?.card_number ?? initial?.last4 ?? '');
+  const [cardExpiry, setCardExpiry] = useState(initial?.card_expiry ?? '');
+  const [cvc, setCvc] = useState<string | null>(null);
   const [memo, setMemo] = useState(initial?.memo ?? '');
   const [aliases, setAliases] = useState((initial?.aliases ?? []).join(', '));
   const [startDay, setStartDay] = useState(initial?.billing ? startDayOf(initial.billing) : 1);
   const [payDay, setPayDay] = useState(initial?.billing?.payment_day ?? 14);
   const [color, setColor] = useState<string | null>(initial?.color ?? null);
-  // 카드번호·유효기간·CVC: 새로 넣거나 고치는 중일 때만 평문으로 들고 있다(저장할 때 암호화).
-  const [draft, setDraft] = useState<CardSecret | null>(null);
   const [askVault, setAskVault] = useState<((k: CryptoKey) => void) | null>(null);
   // 카드 사진으로 AI 가 채운 칸(✨ 표시).
   const [aiFilled, setAiFilled] = useState<Set<string>>(new Set());
@@ -243,9 +248,17 @@ export function AssetEditor({
       setAliases([...new Set([...have, ...card.sms_aliases])].join(', '));
       filled.add('문자연결어');
     }
+    if (card.expiry) {
+      setCardExpiry(card.expiry);
+      filled.add('유효기간');
+    }
+    if (card.cvc) {
+      setCvc(card.cvc);
+      filled.add('CVC');
+    }
     if (card.number) {
-      setLast4(card.number.slice(-4));
-      filled.add('끝 4자리');
+      setCardNumber(card.number);
+      filled.add('카드번호');
       const dup = data.paymentMethods.find((p) => p.id !== initial?.id && !p.archived && p.last4 === card.number!.slice(-4));
       if (dup) toast({ message: `끝자리가 같은 '${dup.name}'이(가) 이미 있어요`, tone: 'error' });
     }
@@ -261,7 +274,6 @@ export function AssetEditor({
       setMemo(`주요 혜택(추정)\n${card.benefits}`);
       filled.add('메모');
     }
-    if (card.number || card.expiry || card.cvc) setDraft({ number: card.number ?? '', expiry: card.expiry ?? '', cvc: card.cvc ?? '' });
     setAiFilled(filled);
     toast({
       message: sure ? '카드를 읽었어요. ✨ 표시한 칸을 확인해 주세요' : '카드를 확실히 알아보지 못했어요. 칸을 확인해 주세요',
@@ -269,23 +281,26 @@ export function AssetEditor({
     });
   };
 
-  const draftFilled = !!draft && !!(draft.number || draft.expiry || draft.cvc);
+  const digits = cardDigits(cardNumber);
+  const fullNumber = digits.length >= 13 && digits.length <= 19 ? digits : null;
+  const expiryOk = !cardExpiry || !!normalizeExpiry(cardExpiry);
 
   const submit = async (close: () => void, key?: CryptoKey) => {
     if (!type || !parsed.name) return;
-    if (draft?.number && !luhnValid(draft.number) && !window.confirm('카드번호 검증이 맞지 않아요. 그대로 저장할까요?')) return;
-    // 카드 정보는 금고로 암호화해서 저장한다. 금고가 잠겨 있으면 먼저 연다.
+    if (fullNumber && !luhnValid(fullNumber) && !window.confirm('카드번호 검증이 맞지 않아요. 그대로 저장할까요?')) return;
+    // CVC 만 금고로 암호화한다. 이 휴대폰이 금고를 기억하지 않으면 먼저 연다.
     let secret = initial?.secret ?? null;
-    if (draft) {
-      if (draftFilled) {
-        const k = key ?? unlockedKey(household.householdId);
+    if (cvc !== null) {
+      if (cvc) {
+        const k = key ?? (await availableKey(household.householdId));
         if (!k) {
           setAskVault(() => (k2: CryptoKey) => void submit(close, k2));
           return;
         }
-        secret = await seal(k, { number: draft.number || null, expiry: draft.expiry || null, cvc: draft.cvc || null });
+        secret = await seal(k, { cvc });
       } else secret = null;
     }
+    const isCard = CARD_TYPES.includes(type);
     const row: PaymentMethod = {
       ...(initial ?? { ...baseRow(household.householdId), sort: data.paymentMethods.length, color: null, issuer: null, archived: false }),
       type,
@@ -293,14 +308,16 @@ export function AssetEditor({
       icon: parsed.icon,
       owner_member_id: ownerId,
       linked_account_id: LINKABLE_TYPES.includes(type) ? linked : null,
-      last4: CARD_TYPES.includes(type) && /^[0-9*]{1,4}$/.test(last4.trim()) ? last4.trim() : null,
+      // 끝 4자리는 문자 연결용(번호 전체가 없으면 입력한 4자리).
+      last4: isCard ? (fullNumber ? fullNumber.slice(-4) : /^\d{4}$/.test(digits) ? digits : null) : null,
+      card_number: isCard ? fullNumber : null,
+      card_expiry: isCard ? normalizeExpiry(cardExpiry) : null,
       memo: memo.trim() || null,
       aliases: aliases.split(',').map((a) => a.trim()).filter(Boolean).slice(0, 20),
       billing,
       color,
-      secret: type && CARD_TYPES.includes(type) ? secret : null,
+      secret: isCard ? secret : null,
     };
-    if (draft?.number && luhnValid(draft.number)) row.last4 = draft.number.slice(-4);
     const saved = await save('payment_methods', row);
     onSaved?.(saved);
     close();
@@ -364,9 +381,9 @@ export function AssetEditor({
           {people.length > 1 ? (
             <Line label="주인">
               <div className="flex flex-wrap gap-1.5">
-                {[...people.map((m) => ({ id: m.id as string | null, node: <MemberBadge member={m} size="md" /> as ReactNode })), { id: null, node: '같이' as ReactNode }].map((o) => (
+                {people.map((m) => ({ id: m.id, node: <MemberBadge member={m} size="md" /> as ReactNode })).map((o) => (
                   <button
-                    key={o.id ?? 'shared'}
+                    key={o.id}
                     type="button"
                     aria-pressed={ownerId === o.id}
                     onClick={() => setOwnerId(o.id)}
@@ -401,12 +418,36 @@ export function AssetEditor({
             </Line>
           ) : null}
           {type && CARD_TYPES.includes(type) ? (
-            <Line label="끝 4자리" ai={aiFilled.has('끝 4자리')}>
-              <input value={last4} onChange={(e) => setLast4(e.target.value.replace(/[^0-9*]/g, '').slice(0, 4))} inputMode="numeric" aria-label="카드 끝 4자리" placeholder="문자에 찍히는 끝자리" className="w-full bg-transparent text-base outline-none placeholder:text-muted/40" />
-            </Line>
-          ) : null}
-          {type && CARD_TYPES.includes(type) ? (
-            <CardSecretSection householdId={household.householdId} sealed={initial?.secret} last4={last4} draft={draft} onDraft={setDraft} />
+            <>
+              <Line label="카드번호" ai={aiFilled.has('카드번호')}>
+                <input
+                  value={digits.length > 4 ? formatCardNumber(digits) : digits}
+                  onChange={(e) => setCardNumber(cardDigits(e.target.value).slice(0, 19))}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  aria-label="카드번호"
+                  placeholder="전체 번호 (또는 끝 4자리)"
+                  className={`tabular w-full bg-transparent text-base tracking-wide outline-none placeholder:text-muted/40 placeholder:tracking-normal ${fullNumber && !luhnValid(fullNumber) ? 'text-expense' : ''}`}
+                />
+              </Line>
+              <Line label="유효기간" ai={aiFilled.has('유효기간')}>
+                <input
+                  value={cardExpiry}
+                  onChange={(e) => {
+                    const d = e.target.value.replace(/\D/g, '').slice(0, 4);
+                    setCardExpiry(d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d);
+                  }}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  aria-label="유효기간"
+                  placeholder="MM/YY"
+                  className={`tabular w-full bg-transparent text-base outline-none placeholder:text-muted/40 ${expiryOk ? '' : 'text-expense'}`}
+                />
+              </Line>
+              <Line label="CVC" ai={aiFilled.has('CVC')}>
+                <CvcField householdId={household.householdId} sealed={initial?.secret} value={cvc} onChange={setCvc} />
+              </Line>
+            </>
           ) : null}
           <Line label="메모" ai={aiFilled.has('메모')}>
             <textarea

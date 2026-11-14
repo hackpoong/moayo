@@ -142,3 +142,47 @@ export function coerceScannedCard(raw: unknown): ScannedCard {
     confidence: o.confidence === 'high' || o.confidence === 'medium' ? o.confidence : 'low',
   };
 }
+
+const MASK = /[*xX•●＊#]/;
+
+/** 문구에서 카드번호 같은 덩어리(숫자·가림표, 사이 '-'·공백)를 꺼낸다. 가림표는 '*' 로 바꾼다. */
+export function cardNumberTokens(text: string | null | undefined): string[] {
+  if (!text) return [];
+  const out: string[] = [];
+  for (const m of text.matchAll(/[0-9*xX•●＊#](?:[0-9*xX•●＊#]|[-\s](?=[0-9*xX•●＊#])){3,}/g)) {
+    const token = m[0].replace(/[-\s]/g, '').replace(new RegExp(MASK.source, 'g'), '*');
+    // '11/14 14:02' 같은 숫자가 띄어쓰기로 붙지 않게, 띄어 쓴 덩어리는 카드번호 길이(12자 이상)일 때만.
+    if (/[-\s]/.test(m[0]) && token.length < 12) continue;
+    if ((token.match(/\d/g) ?? []).length >= 3) out.push(token);
+  }
+  return out;
+}
+
+/** 덩어리 하나가 카드번호(또는 끝 4자리)와 맞는지. */
+function tokenMatches(token: string, number: string | null, last4: string | null): boolean {
+  const masked = token.includes('*');
+  const lead = /^\d*/.exec(token)![0];
+  const tail = /\d*$/.exec(token)![0];
+  if (number) {
+    if (token.length === number.length) return [...token].every((c, i) => c === '*' || c === number[i]);
+    if (masked) return (lead + tail).length >= 3 && (!lead || number.startsWith(lead)) && (!tail || number.endsWith(tail));
+    // 숫자만: 4자리는 끝자리, 6자리는 앞자리(카드사 번호)
+    if (token.length === 4) return number.endsWith(token);
+    if (token.length === 6) return number.startsWith(token);
+    return false;
+  }
+  if (!last4) return false;
+  if (masked) return tail.length >= 3 && last4.endsWith(tail.slice(-4));
+  return token.length === 4 && token === last4;
+}
+
+/**
+ * 문자·알림·캡처에 찍힌 카드번호가 이 카드인지. 어떤 모양이든 맞춘다:
+ * '1234', '(1234)', '*1234', '411111', '4111-11**-****-1111', '411111******1111'.
+ * 카드번호 전체가 없으면 끝 4자리로만 본다.
+ */
+export function cardHintMatches(hint: string | null | undefined, number: string | null | undefined, last4: string | null | undefined): boolean {
+  const n = number ? cardDigits(number) : null;
+  const l4 = last4 && /^\d{4}$/.test(last4) ? last4 : n ? n.slice(-4) : null;
+  return cardNumberTokens(hint).some((t) => tokenMatches(t, n || null, l4));
+}

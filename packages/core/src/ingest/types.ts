@@ -37,6 +37,8 @@ export interface ExtractedItem {
   /** 원문에 적힌 결제수단 이름 그대로(예: '네이버 현대카드', '내 하나은행 계좌'). 없으면 null. */
   payment_label: string | null;
   card_last4: string | null;
+  /** 원문에 보이는 카드번호 그대로(가림표 포함, 예: '4111-22**-****-1234', '411122'). 자산 연결에만 쓴다. */
+  card_number_hint?: string | null;
   approval_no: string | null;
   /** 원문 앱이 회색 등으로 '소비 아님'을 표시한 줄(내 계좌 이체, 충전, 카드대금 등). */
   greyed: boolean;

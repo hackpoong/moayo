@@ -44,6 +44,7 @@ function coerceItem(raw: unknown): ExtractedItem | null {
     status: oneOf(o.status, ['approved', 'canceled', 'partial_canceled', 'declined'] as const, 'approved'),
     payment_label: str(o.payment_label),
     card_last4: str(o.card_last4)?.replace(/\D/g, '').slice(-4) || null,
+    card_number_hint: str(o.card_number_hint)?.slice(0, 40) ?? null,
     approval_no: str(o.approval_no),
     greyed: o.greyed === true,
     foreign_currency: str(o.foreign_currency),

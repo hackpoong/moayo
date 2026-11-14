@@ -265,8 +265,12 @@ select test.ok(test.throws(format($$insert into public.household_vault (househol
   values (%L, 'c2FsdHNhbHRzYWx0c2FsdA==', 600000, '{"iv":"a","ct":"b"}')$$, :'hc')), '다른 가족 금고는 못 만듦');
 select test.ok(test.affected(format($$update public.payment_methods set secret = '{"v":1,"iv":"a","ct":"b"}' where household_id = %L$$, :'ha')) >= 1, '자산에 암호문 저장');
 select test.ok(test.throws(format($$update public.payment_methods set secret = '{"number":"4111"}' where household_id = %L$$, :'ha')), '암호문 모양이 아니면 거부');
+select test.ok(test.affected(format($$update public.payment_methods set card_number = '4111111111111111', card_expiry = '08/29' where household_id = %L$$, :'ha')) >= 1, '카드번호·유효기간 저장');
+select test.ok(test.throws(format($$update public.payment_methods set card_number = '4111-1111' where household_id = %L$$, :'ha')), '카드번호는 숫자 13~19자리만');
+select test.ok(test.throws(format($$update public.payment_methods set card_expiry = '13/29' where household_id = %L$$, :'ha')), '유효기간 형식 확인');
 select test.login(:'carol');
 select test.ok((select count(*) from public.household_vault) = 0, '캐럴: 다른 가족 금고 안 보임');
+select test.ok((select count(*) from public.payment_methods where card_number is not null) = 0, '캐럴: 다른 가족 카드번호 안 보임');
 select test.login(:'alice');
 
 reset role;
