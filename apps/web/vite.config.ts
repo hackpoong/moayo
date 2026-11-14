@@ -34,8 +34,16 @@ export default defineConfig({
       },
       workbox: {
         // 앱 껍데기를 통째로 캐시해서 다시 열 때 네트워크를 기다리지 않는다.
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png}'],
         navigateFallback: '/index.html',
+        // 글꼴은 글자 묶음별로 잘게 나뉘어 있어 필요한 것만 받고, 한 번 받으면 기기에 둔다.
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.destination === 'font',
+            handler: 'CacheFirst',
+            options: { cacheName: 'fonts', expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 365 } },
+          },
+        ],
       },
     }),
   ],

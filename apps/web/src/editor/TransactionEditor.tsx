@@ -316,7 +316,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
     ) : null;
 
   const dateLabel = `${date.slice(2, 4)}. ${Number(date.slice(5, 7))}. ${Number(date.slice(8, 10))}. (${weekday(date)})`;
-  const timeLabel = time ? `${Number(time.slice(0, 2)) < 12 ? '오전' : '오후'} ${((Number(time.slice(0, 2)) + 11) % 12) + 1}:${time.slice(3, 5)}` : '시각 없음';
+  const timeLabel = time ? `${Number(time.slice(0, 2)) < 12 ? '오전' : '오후'} ${((Number(time.slice(0, 2)) + 11) % 12) + 1}:${time.slice(3, 5)}` : '';
 
   return (
     <>
@@ -330,7 +330,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
           return true;
         }}
         header={(close) => (
-          <div className="flex h-14 items-center gap-1 px-2">
+          <div className="flex h-12 items-center gap-1 px-2">
             <button type="button" aria-label="닫기" onClick={close} className="press flex size-11 items-center justify-center rounded-full">
               <ArrowLeft className="size-6" aria-hidden />
             </button>
@@ -369,7 +369,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         overlay={panelNode}
       >
         {(close) => (
-        <div className={`space-y-4 px-5 pt-2 ${panel ? 'pb-[46dvh]' : 'pb-6'}`} onClick={() => panel && openPanel(null)}>
+        <div className={`space-y-3 px-5 pt-1 ${panel ? 'pb-[46dvh]' : 'pb-6'}`} onClick={() => panel && openPanel(null)}>
           {/* 구분 */}
           <div className="grid grid-cols-3 gap-2">
             {(['income', 'expense', 'transfer'] as const).map((k) => (
@@ -378,7 +378,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
                 type="button"
                 aria-pressed={k === kind}
                 onClick={() => changeKind(k)}
-                className={`press h-11 rounded-xl border-2 text-[15px] font-semibold ${k === kind ? `${KIND_STYLE[k]} bg-surface` : 'border-transparent bg-surface-2 text-muted'}`}
+                className={`press h-[38px] rounded-xl border-2 text-[15px] font-semibold ${k === kind ? `${KIND_STYLE[k]} bg-surface` : 'border-transparent bg-surface-2 text-muted'}`}
               >
                 {KIND_LABEL[k]}
               </button>
@@ -395,11 +395,11 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
             <Row label="날짜">
               <div className="flex flex-1 items-center gap-3">
                 <label className="relative">
-                  <span className="text-[17px]">{dateLabel}</span>
+                  <span className="text-base">{dateLabel}</span>
                   <input type="date" aria-label="날짜" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} className="absolute inset-0 opacity-0" />
                 </label>
-                <label className="relative">
-                  <span className="text-[17px]">{timeLabel}</span>
+                <label className="relative min-w-16">
+                  <span className="text-base">{timeLabel}</span>
                   <input type="time" aria-label="시각" value={time} onChange={(e) => setTime(e.target.value)} className="absolute inset-0 opacity-0" />
                 </label>
               </div>
@@ -439,7 +439,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
                   }
                 }}
                 placeholder={kind === 'income' ? '예: 11월 급여' : kind === 'transfer' ? '예: 엄마에게' : '예: 맥도날드'}
-                className="min-w-0 flex-1 bg-transparent text-[17px] outline-none placeholder:text-muted/50"
+                className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted/50"
               />
               {title ? (
                 <button type="button" aria-label="제목 지우기" onClick={() => setTitle('')} className="press -mr-1 rounded-full p-1 text-muted">
@@ -448,7 +448,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
               ) : null}
             </Row>
             {titleChoices.length ? (
-              <div className="flex flex-wrap gap-2 py-2 pl-16" role="listbox" aria-label="예전 제목">
+              <div className="flex flex-wrap gap-1.5 py-1.5 pl-14" role="listbox" aria-label="예전 제목">
                 {titleChoices.map((s) => {
                   const c = s.categoryId ? data.byId.category.get(s.categoryId) : null;
                   return (
@@ -459,7 +459,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
                       aria-selected={false}
                       onPointerDown={(e) => e.preventDefault()}
                       onClick={() => pickTitle(s)}
-                      className="press flex h-9 max-w-full items-center gap-1.5 rounded-full bg-surface-2 px-3 text-sm"
+                      className="press flex h-8 max-w-full items-center gap-1.5 rounded-full bg-surface-2 px-3 text-sm"
                     >
                       {c?.icon ? <span aria-hidden>{c.icon}</span> : null}
                       <span className="truncate">{s.title}</span>
@@ -471,7 +471,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
 
             {/* 3) 금액 */}
             <Row label="금액" active={panel === 'amount'} onClick={() => openPanel('amount')}>
-              <span className={`tabular flex-1 text-[19px] font-semibold ${amountExpr ? '' : 'text-muted/50'}`}>
+              <span className={`tabular flex-1 text-[17px] font-bold ${amountExpr ? '' : 'text-muted/50'}`}>
                 {amountExpr ? (hasOperator(amountExpr) ? formatAmountExpression(amountExpr) : `${formatAmount(amount)}원`) : '0원'}
               </span>
             </Row>
@@ -480,9 +480,9 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
             {kind !== 'transfer' ? (
               <Row label="분류" active={panel === 'category'} onClick={() => !splitMode && openPanel('category')}>
                 {splitMode ? (
-                  <span className="text-[17px]">{splits.length}개로 나눔</span>
+                  <span className="text-base">{splits.length}개로 나눔</span>
                 ) : (
-                  <span className={`flex flex-1 items-center gap-2 text-[17px] ${category ? '' : 'text-muted/50'}`}>
+                  <span className={`flex flex-1 items-center gap-2 text-base ${category ? '' : 'text-muted/50'}`}>
                     {category ? (
                       <>
                         <span aria-hidden>{category.icon}</span>
@@ -497,7 +497,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
               </Row>
             ) : null}
             {splitMode ? (
-              <div className="py-3 pl-16">
+              <div className="py-2 pl-14">
                 <SplitEditor amount={amount} splits={splits} categories={categories} onChange={setSplits} />
                 <button type="button" onClick={() => setSplitMode(false)} className="mt-1 text-sm text-muted underline">
                   나누기 취소
@@ -507,14 +507,14 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
 
             {/* 5) 자산 */}
             <Row label={kind === 'transfer' ? '보낸 곳' : kind === 'income' ? '받은 곳' : '자산'} active={panel === 'asset'} onClick={() => openPanel('asset')}>
-              <span className={`flex flex-1 items-center gap-2 text-[17px] ${paymentMethod ? '' : 'text-muted/50'}`}>
+              <span className={`flex flex-1 items-center gap-2 text-base ${paymentMethod ? '' : 'text-muted/50'}`}>
                 {activeMembers.length > 1 && member ? <MemberBadge member={member} size="md" /> : null}
                 {activeMembers.length > 1 && member && paymentMethod ? <span className="text-muted">·</span> : null}
                 {paymentMethod?.name ?? (original?.payment_label ? `‘${original.payment_label}’` : '선택')}
               </span>
             </Row>
             {cashDate !== date ? (
-              <p className="py-1.5 pl-16 text-xs text-muted">
+              <p className="py-1 pl-14 text-xs font-normal text-muted">
                 {shortDate(cashDate)} 결제 예정{isCredit && installments > 1 ? ` · ${installments}개월 나눠서` : ''}
               </p>
             ) : null}
@@ -523,7 +523,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
           {transferHint ? (
             <div className="flex items-center gap-3 rounded-xl bg-brand-soft px-4 py-3 text-sm">
               <ArrowLeftRight className="size-5 shrink-0 text-brand" aria-hidden />
-              <p className="flex-1">‘{transferHint.label}’은(는) 우리끼리 이체 대상입니다.</p>
+              <p className="flex-1">‘{transferHint.label}’은(는) 이체(지출 아님) 대상입니다.</p>
               <button type="button" onClick={() => changeKind('transfer')} className="shrink-0 font-semibold text-brand">
                 바꾸기
               </button>
@@ -579,7 +579,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
             maxLength={200}
             placeholder="메모"
             aria-label="메모"
-            className="h-12 w-full border-b border-line bg-transparent text-[16px] outline-none placeholder:text-muted/60 focus:border-brand"
+            className="h-11 w-full border-b border-line bg-transparent text-base outline-none placeholder:text-muted/60 focus:border-brand"
           />
 
           {original && original.source !== 'manual' ? (
@@ -625,10 +625,10 @@ function Row({ label, active, onClick, children }: { label: string; active?: boo
         e.stopPropagation();
         onClick();
       }}
-      className={`flex min-h-14 items-center gap-3 ${onClick ? 'cursor-pointer' : ''}`}
+      className={`flex min-h-11 items-center gap-3 ${onClick ? 'cursor-pointer' : ''}`}
     >
-      <span className="w-12 shrink-0 text-[15px] text-muted">{label}</span>
-      <div className={`flex min-h-14 flex-1 items-center border-b-2 transition-colors ${active ? 'border-brand' : 'border-line'}`}>{children}</div>
+      <span className="w-11 shrink-0 text-sm font-normal text-muted">{label}</span>
+      <div className={`flex min-h-11 min-w-0 flex-1 items-center border-b-2 transition-colors ${active ? 'border-brand' : 'border-line'}`}>{children}</div>
     </div>
   );
 }

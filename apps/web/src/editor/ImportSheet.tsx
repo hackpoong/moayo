@@ -378,7 +378,7 @@ function JobCard({ job, onRetry }: { job: Job; onRetry: () => void }) {
                       <span className="min-w-0 flex-1 truncate text-sm">
                         {item.merchant ?? '이름 없음'}
                         {item.status === 'canceled' ? <span className="ml-1 text-muted">(취소)</span> : null}
-                        {item.kind === 'transfer' ? <span className="ml-1 text-muted">(우리끼리)</span> : null}
+                        {item.kind === 'transfer' ? <span className="ml-1 text-muted">(이체)</span> : null}
                       </span>
                       <span className="tabular shrink-0 text-xs text-muted">{shortDate(toKstDate(item.occurred_at))}</span>
                       <span className="tabular w-20 shrink-0 text-right text-sm font-semibold">{formatWon(item.amount)}</span>

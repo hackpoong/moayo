@@ -9,11 +9,23 @@ import {
   type PaymentMethodType,
 } from '@moayo/core';
 import { ChevronDown, Delete, Pencil, Scissors, Sparkles, UserRoundCog } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { MemberBadge } from '../components/MemberBadge.tsx';
 import { haptic } from '../lib/flash.ts';
 
 export type PanelKind = 'amount' | 'category' | 'asset';
+
+/**
+ * 패널이 막 바뀐 직후의 누름은 무시한다.
+ * 앞 패널(숫자패드 '완료' 등)을 누른 손가락의 click 이 새 패널 칸에 떨어지는 것을 막는다.
+ */
+function useFreshGuard(ms = 350) {
+  const openedAt = useRef(0);
+  useEffect(() => {
+    openedAt.current = performance.now();
+  }, []);
+  return () => performance.now() - openedAt.current < ms;
+}
 
 /** 휴대폰 키보드 자리에 뜨는 앱 입력판. 위 막대 + 내용. */
 function PanelFrame({ title, actions, onClose, children }: { title: ReactNode; actions?: ReactNode; onClose: () => void; children: ReactNode }) {
@@ -66,9 +78,11 @@ export function AmountPanel({ expr, onChange, onDone, onClose }: { expr: string;
             key={k}
             type="button"
             onPointerDown={(e) => {
+              if (k === 'done') return;
               e.preventDefault();
               press(k);
             }}
+            onClick={() => k === 'done' && press(k)}
             aria-label={k === 'del' ? '지우기' : k === 'done' ? '완료' : k}
             className={`flex h-[3.6rem] select-none items-center justify-center text-2xl font-medium active:brightness-90 ${
               k === 'done' ? 'bg-brand text-lg font-semibold text-brand-fg' : 'bg-surface active:bg-surface-2'
@@ -100,6 +114,7 @@ export function CategoryPanel({
   onSplit: () => void;
   onClose: () => void;
 }) {
+  const isFresh = useFreshGuard();
   return (
     <PanelFrame
       title="분류"
@@ -122,6 +137,7 @@ export function CategoryPanel({
             key={c.id}
             type="button"
             onClick={() => {
+              if (isFresh()) return;
               haptic(6);
               onPick(c);
             }}
@@ -134,7 +150,7 @@ export function CategoryPanel({
             <span className="line-clamp-1">{c.name}</span>
           </button>
         ))}
-        <button type="button" onClick={() => onPick(null)} className={`flex h-[4.25rem] flex-col items-center justify-center gap-0.5 text-[13px] ${selectedId === null ? 'bg-brand-soft font-semibold text-brand' : 'bg-surface text-muted'}`}>
+        <button type="button" onClick={() => !isFresh() && onPick(null)} className={`flex h-[4.25rem] flex-col items-center justify-center gap-0.5 text-[13px] ${selectedId === null ? 'bg-brand-soft font-semibold text-brand' : 'bg-surface text-muted'}`}>
           <span className="text-xl leading-none" aria-hidden>
             ❔
           </span>
@@ -168,6 +184,7 @@ export function AssetPanel({
   onClose: () => void;
 }) {
   // 지금 보고 있는 사람의 자산 + 주인이 없는(같이 쓰는) 자산.
+  const isFresh = useFreshGuard();
   const visible = methods.filter((m) => !m.archived && (!m.owner_member_id || m.owner_member_id === viewingMember?.id || members.length < 2));
   const groups = TYPE_ORDER.map((t) => ({ type: t, items: visible.filter((m) => m.type === t) })).filter((g) => g.items.length);
 
@@ -214,6 +231,7 @@ export function AssetPanel({
                   key={pm.id}
                   type="button"
                   onClick={() => {
+                    if (isFresh()) return;
                     haptic(6);
                     onPick(pm);
                   }}

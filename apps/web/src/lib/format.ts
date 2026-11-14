@@ -26,14 +26,14 @@ export function monthLabel(month: string, thisYear = todayKst().slice(0, 4)): st
   return y === thisYear ? `${Number(m)}월` : `${y}년 ${Number(m)}월`;
 }
 
-/** 지출은 -, 수입은 +, 우리끼리 이체는 부호 없이. */
+/** 지출은 -, 수입은 +, 이체는 부호 없이. */
 export function signedAmount(kind: TransactionKind, amount: number): string {
   if (kind === 'expense') return `-${formatAmount(amount)}`;
   if (kind === 'income') return `+${formatAmount(amount)}`;
   return formatAmount(amount);
 }
 
-export const KIND_LABEL: Record<TransactionKind, string> = { expense: '지출', income: '수입', transfer: '우리끼리 이체' };
+export const KIND_LABEL: Record<TransactionKind, string> = { expense: '지출', income: '수입', transfer: '이체' };
 
 export const KIND_TEXT: Record<TransactionKind, string> = {
   expense: 'text-fg',

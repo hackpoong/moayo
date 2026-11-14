@@ -44,8 +44,8 @@
 
 @theme inline {
   --font-sans:
-    -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR', 'Malgun Gothic',
-    'Segoe UI', sans-serif;
+    'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR',
+    'Malgun Gothic', 'Segoe UI', sans-serif;
   --color-bg: var(--app-bg);
   --color-surface: var(--app-surface);
   --color-surface-2: var(--app-surface-2);
@@ -82,6 +82,8 @@ body {
   background: var(--app-bg);
   color: var(--app-fg);
   font-family: var(--font-sans);
+  font-weight: 500;
+  letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
