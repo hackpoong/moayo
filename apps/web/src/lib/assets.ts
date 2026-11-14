@@ -4,12 +4,22 @@ import type { PaymentMethod, PaymentMethodType } from '@moayo/core';
 export const ASSET_TYPE_ICON: Record<PaymentMethodType, string> = {
   cash: '💵',
   bank_account: '🏦',
-  check_card: '💳',
   credit_card: '💳',
+  check_card: '💳',
+  prepaid_card: '🎫',
   local_currency: '🪙',
-  gift_voucher: '🎟️',
   easy_pay: '📱',
+  gift_voucher: '🎟️',
+  savings: '🐷',
+  investment: '📈',
+  overdraft: '➖',
+  loan: '🏛️',
+  insurance: '🛡️',
+  other: '💰',
 };
+
+/** 카드 대금·충전이 빠져나가는 계좌를 고를 수 있는 그룹. */
+export const LINKABLE_TYPES: PaymentMethodType[] = ['credit_card', 'check_card', 'prepaid_card', 'local_currency', 'easy_pay'];
 
 export function assetIcon(pm: Pick<PaymentMethod, 'type'> & { icon?: string | null } | null | undefined): string {
   if (!pm) return '';

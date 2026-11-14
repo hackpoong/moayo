@@ -11,3 +11,5 @@ export * from './suggest.ts';
 export * from './amount.ts';
 export * from './allocate.ts';
 export * from './voice.ts';
+export * from './iconName.ts';
+export * from './cardStatement.ts';

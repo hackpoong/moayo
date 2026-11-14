@@ -38,8 +38,8 @@ import { KIND_LABEL, shortDate, weekday } from '../lib/format.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
 import { useOpenEditor, type EditorRequest } from './editorContext.ts';
 import { AmountPanel, AssetPanel, CategoryPanel, type PanelKind } from './InputPanel.tsx';
-import { NewPaymentMethod } from './NewPaymentMethod.tsx';
-import { QuickAddCategory } from './QuickAddCategory.tsx';
+import { AssetManagerSheet } from '../manage/AssetManager.tsx';
+import { CategoryManagerSheet } from '../manage/CategoryManager.tsx';
 import { VoiceButton } from './VoiceButton.tsx';
 
 type PayRow = { payment_method_id: string | null; member_id: string | null; amount: number };
@@ -817,28 +817,8 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
         )}
       </Sheet>
 
-      {adding === 'category' ? (
-        <QuickAddCategory
-          kind={categoryKind}
-          onClose={() => setAdding(null)}
-          onCreated={(c) => {
-            setAdding(null);
-            pickCategory(c);
-          }}
-        />
-      ) : null}
-      {adding === 'asset' ? (
-        <Sheet title={`${viewingMember && activeMembers.length > 1 ? `${viewingMember.display_name}의 ` : ''}자산 추가`} onClose={() => setAdding(null)}>
-          <NewPaymentMethod
-            ownerMemberId={activeMembers.length > 1 ? (viewingMember?.id ?? null) : null}
-            onCancel={() => setAdding(null)}
-            onCreated={(pm) => {
-              setAdding(null);
-              pickAsset(pm);
-            }}
-          />
-        </Sheet>
-      ) : null}
+      {adding === 'category' ? <CategoryManagerSheet kind={categoryKind} onClose={() => setAdding(null)} /> : null}
+      {adding === 'asset' ? <AssetManagerSheet defaultOwnerId={activeMembers.length > 1 ? (viewingMember?.id ?? null) : null} onClose={() => setAdding(null)} /> : null}
     </>
   );
 }

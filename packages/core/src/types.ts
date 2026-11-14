@@ -38,25 +38,40 @@ export interface Member extends SyncedRow {
   aliases: string[];
 }
 
+/** 자산 그룹. 보여 주는 순서대로. */
 export const PAYMENT_METHOD_TYPES = [
   'cash',
+  'bank_account',
   'credit_card',
   'check_card',
-  'bank_account',
+  'prepaid_card',
   'local_currency',
-  'gift_voucher',
   'easy_pay',
+  'gift_voucher',
+  'savings',
+  'investment',
+  'overdraft',
+  'loan',
+  'insurance',
+  'other',
 ] as const;
 export type PaymentMethodType = (typeof PAYMENT_METHOD_TYPES)[number];
 
 export const PAYMENT_METHOD_TYPE_LABEL: Record<PaymentMethodType, string> = {
   cash: '현금',
+  bank_account: '은행',
   credit_card: '신용카드',
   check_card: '체크카드',
-  bank_account: '계좌',
+  prepaid_card: '선불카드',
   local_currency: '지역화폐',
+  easy_pay: '간편결제',
   gift_voucher: '상품권',
-  easy_pay: '간편결제 머니',
+  savings: '저축',
+  investment: '투자',
+  overdraft: '마이너스통장',
+  loan: '대출',
+  insurance: '보험',
+  other: '기타',
 };
 
 /**
@@ -84,6 +99,11 @@ export interface PaymentMethod extends SyncedRow {
   color: string | null;
   sort: number;
   archived: boolean;
+  /** 이름 앞 아이콘(이모지). 없으면 그룹 기본 아이콘. */
+  icon?: string | null;
+  /** 카드 대금이 빠져나가는 계좌(자산 id). */
+  linked_account_id?: Uuid | null;
+  memo?: string | null;
 }
 
 export type CategoryKind = 'expense' | 'income';

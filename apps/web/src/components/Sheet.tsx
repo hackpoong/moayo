@@ -26,6 +26,7 @@ const openSheets: string[] = [];
 
 const CLOSE_MS = 180;
 const HISTORY_KEY = 'moayoSheet';
+const DEPTH_KEY = 'moayoSheetDepth';
 
 /**
  * 휴대폰에서는 아래에서 올라오는 시트, 넓은 화면에서는 가운데 대화상자.
@@ -56,16 +57,18 @@ export function Sheet({ title, onClose, children, footer, tall, headerExtra, ful
   // 뒤로가기: 열 때 기록을 하나 쌓고, 뒤로가기로 그 기록이 빠지면 시트를 닫는다.
   useEffect(() => {
     const state = (window.history.state ?? {}) as Record<string, unknown>;
+    // 몇 번째로 겹친 시트인지. 뒤로가기로 기록이 그보다 얕아지면 닫는다.
+    const depth = openSheets.length + 1;
     // 다른 시트 위에 열리면 기록을 하나 더 쌓고, 방금 닫힌 시트를 이어받는 경우에는 그 기록을 바꿔 쓴다.
-    if (state[HISTORY_KEY] && openSheets.length === 0) window.history.replaceState({ ...state, [HISTORY_KEY]: id }, '');
-    else window.history.pushState({ ...state, [HISTORY_KEY]: id }, '');
+    if (state[HISTORY_KEY] && openSheets.length === 0) window.history.replaceState({ ...state, [HISTORY_KEY]: id, [DEPTH_KEY]: depth }, '');
+    else window.history.pushState({ ...state, [HISTORY_KEY]: id, [DEPTH_KEY]: depth }, '');
     openSheets.push(id);
     const onPop = () => {
       const now = (window.history.state ?? {}) as Record<string, unknown>;
-      if (now[HISTORY_KEY] === id) return;
+      if (now[HISTORY_KEY] === id || Number(now[DEPTH_KEY] ?? 0) >= depth) return;
       // 맨 위 시트가 뒤로가기를 처리했으면 빠진 기록을 다시 쌓고 열어 둔다.
       if (openSheets.at(-1) === id && onBackRef.current?.()) {
-        window.history.pushState({ ...now, [HISTORY_KEY]: id }, '');
+        window.history.pushState({ ...now, [HISTORY_KEY]: id, [DEPTH_KEY]: depth }, '');
         return;
       }
       requestClose();

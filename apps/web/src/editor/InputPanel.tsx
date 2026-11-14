@@ -3,6 +3,7 @@ import {
   formatAmount,
   hasOperator,
   PAYMENT_METHOD_TYPE_LABEL,
+  PAYMENT_METHOD_TYPES,
   type Category,
   type Member,
   type PaymentMethod,
@@ -140,7 +141,7 @@ export function CategoryPanel({
       actions={
         <>
           <MultiToggle on={multi} onClick={onToggleMulti} />
-          <BarButton label="분류 추가" onClick={onAdd}>
+          <BarButton label="분류 편집" onClick={onAdd}>
             <Pencil className="size-5" aria-hidden />
           </BarButton>
         </>
@@ -180,7 +181,7 @@ export function CategoryPanel({
 }
 
 // ── 자산 ───────────────────────────────────────────────────────────────────
-const TYPE_ORDER: PaymentMethodType[] = ['cash', 'bank_account', 'check_card', 'credit_card', 'local_currency', 'gift_voucher', 'easy_pay'];
+const TYPE_ORDER: readonly PaymentMethodType[] = PAYMENT_METHOD_TYPES;
 
 export function AssetPanel({
   methods,
@@ -237,7 +238,7 @@ export function AssetPanel({
               {nextMember ? `${nextMember.emoji ?? ''}${nextMember.display_name}` : '바꾸기'}
             </BarButton>
           ) : null}
-          <BarButton label="자산 추가" onClick={onAdd}>
+          <BarButton label="자산 편집" onClick={onAdd}>
             <Pencil className="size-5" aria-hidden />
           </BarButton>
         </>
