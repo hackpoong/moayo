@@ -140,10 +140,20 @@ export function normalizeExtraction(extraction: Extraction, ctx: NormalizeContex
 
 const isLabeled = (c: Candidate) => !!(c.payment_label || c.payment_method_id);
 
+const LOCAL_CURRENCY = /여민전|온통대전|동백전|인천e음|경기지역화폐|chak|코나|지역화폐/i;
+
+/** 표시 이름이 가리키는 지역화폐 이름(같은 지역화폐면 같은 값). 없으면 null. */
+export function localCurrencyKey(label: string | null | undefined): string | null {
+  const m = LOCAL_CURRENCY.exec(label ?? '');
+  if (!m) return null;
+  const k = m[0].toLowerCase();
+  return k === '코나' ? '여민전' : k; // 토스는 여민전을 코나아이로 보여 준다
+}
+
 export function isLocalCurrency(c: Pick<Candidate, 'payment_method_id' | 'payment_label'>, methods: readonly PaymentMethod[]): boolean {
   const m = c.payment_method_id ? methods.find((x) => x.id === c.payment_method_id) : null;
   if (m?.type === 'local_currency') return true;
-  return /여민전|지역화폐|코나|chak|동백전|온통대전|인천e음|경기지역화폐/i.test(c.payment_label ?? '');
+  return localCurrencyKey(c.payment_label) !== null;
 }
 
 /**
@@ -166,7 +176,7 @@ function collapsePairs(cands: Candidate[], methods: readonly PaymentMethod[]): C
         l.date === u.date &&
         isLocalCurrency(l, methods) &&
         u.amount < l.amount &&
-        u.amount >= l.amount * 0.5 &&
+        u.amount >= l.amount * 0.3 &&
         (merchantSimilarity(l.merchant, u.merchant) ?? 0) >= 0.85,
     );
     if (local) {

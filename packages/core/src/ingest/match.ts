@@ -6,7 +6,7 @@
 import { computeCashDate } from '../cashDate.ts';
 import { toKstDate } from '../kst.ts';
 import type { PaymentMethod, Transaction } from '../types.ts';
-import { isLocalCurrency } from './normalize.ts';
+import { isLocalCurrency, localCurrencyKey } from './normalize.ts';
 import { isWrapperLabel, merchantSimilarity } from './text.ts';
 import type { Candidate, MatchAction } from './types.ts';
 
@@ -91,7 +91,8 @@ export function scorePair(c: Candidate, t: Transaction, methods: readonly Paymen
     const a = labelKey(c.payment_label);
     const b = labelKey(t.payment_label);
     // 화면 끝에서 잘려 앞부분만 읽힌 이름('내 하나은행')도 같은 이름으로 본다.
-    if (a !== b && !(Math.min(a.length, b.length) >= 3 && (a.startsWith(b) || b.startsWith(a)))) return null;
+    const sameLocal = localCurrencyKey(c.payment_label) !== null && localCurrencyKey(c.payment_label) === localCurrencyKey(t.payment_label);
+    if (a !== b && !sameLocal && !(Math.min(a.length, b.length) >= 3 && (a.startsWith(b) || b.startsWith(a)))) return null;
     score += 25;
   } else if (cLabeled !== tLabeled) {
     score += 10; // 한쪽만 결제수단이 보임: 같은 결제를 다른 앱이 따로 보여 주는 흔한 경우
@@ -120,8 +121,8 @@ export function localCurrencyRelation(c: Candidate, t: Transaction, methods: rea
   const cLocal = isLocalCurrency(c, methods);
   const cUnlabeled = !c.payment_method_id && !c.payment_label;
   const tUnlabeled = !t.payment_method_id && !t.payment_label;
-  if (tLocal && cUnlabeled && c.amount < t.amount && c.amount >= t.amount * 0.5) return 'cand-smaller';
-  if (cLocal && tUnlabeled && t.amount < c.amount && t.amount >= c.amount * 0.5) return 'tx-smaller';
+  if (tLocal && cUnlabeled && c.amount < t.amount && c.amount >= t.amount * 0.3) return 'cand-smaller';
+  if (cLocal && tUnlabeled && t.amount < c.amount && t.amount >= c.amount * 0.3) return 'tx-smaller';
   return null;
 }
 

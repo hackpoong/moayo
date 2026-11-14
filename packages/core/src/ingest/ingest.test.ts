@@ -526,3 +526,23 @@ describe('잘못 이체로 보던 경우', () => {
     expect(normalizeExtraction(extraction([{ merchant: '(상품명 잘림)', amount: 14200 }]), ctx())).toHaveLength(0);
   });
 });
+
+describe('온통대전', () => {
+  it('결제요청금액(캐시백 포함)과 캐시백 뺀 사용금액 줄은 하나로, 상세 화면의 시각·승인번호를 보충', () => {
+    let db = ingest([], extraction([
+      { date: '2026-10-09', merchant: '(주)꾸드뱅', amount: 10962 },
+      { date: '2026-10-09', merchant: '(주)꾸드뱅', amount: 16200, payment_label: '대전 온통대전 체크카드' },
+    ])).db;
+    expect(db).toHaveLength(1);
+    expect(db[0]!.amount).toBe(16200);
+    db = ingest(db, extraction([{ date: '2026-10-09', time: '14:06', merchant: '(주)꾸드뱅', amount: 16200, approval_no: '00000001', payment_label: '온통대전 꿈돌이카드(까꿍)' }], 'local_currency_app')).db;
+    expect(db).toHaveLength(1);
+    expect(db[0]!.has_time).toBe(true);
+    expect(db[0]!.approval_no).toBe('00000001');
+  });
+
+  it("'온통대전 충전'은 우리끼리 이체", () => {
+    const cands = normalizeExtraction(extraction([{ merchant: '온통대전 충전', amount: 300000, payment_label: '온통대전 꿈돌이카드' }], 'local_currency_app'), ctx());
+    expect(cands[0]!.kind).toBe('transfer');
+  });
+});
