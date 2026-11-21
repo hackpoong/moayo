@@ -104,6 +104,8 @@ export interface PaymentMethod extends SyncedRow {
   /** 카드 대금이 빠져나가는 계좌(자산 id). */
   linked_account_id?: Uuid | null;
   memo?: string | null;
+  /** 체크카드의 성격: 일반 / 지역화폐 / 디지털온누리. 지역화폐면 캐시백·충전 정리를 한다. */
+  card_kind?: 'general' | 'local_currency' | 'onnuri' | null;
   /** 카드번호 전체(숫자만)·유효기간(MM/YY). 자산 화면에 바로 보인다. */
   card_number?: string | null;
   card_expiry?: string | null;

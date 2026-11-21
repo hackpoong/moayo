@@ -76,13 +76,15 @@ export interface ScannedCard {
   sms_aliases: string[];
   bank_hint: string | null;
   benefits: string | null;
+  /** 체크카드의 성격: 지역화폐(여민전·온통대전 등)·디지털온누리면 그것. */
+  card_kind: 'general' | 'local_currency' | 'onnuri' | null;
   confidence: 'high' | 'medium' | 'low';
 }
 
 export const CARD_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['issuer', 'product_name', 'type', 'network', 'number', 'expiry', 'cvc', 'emoji', 'color', 'sms_aliases', 'bank_hint', 'benefits', 'confidence'],
+  required: ['issuer', 'product_name', 'type', 'network', 'number', 'expiry', 'cvc', 'emoji', 'color', 'sms_aliases', 'bank_hint', 'benefits', 'card_kind', 'confidence'],
   properties: {
     issuer: { ...nullable('string'), description: '카드사(예: 현대카드, 신한카드, KB국민카드)' },
     product_name: { ...nullable('string'), description: '카드 상품 이름(예: 현대카드 M, 신한카드 Deep Dream)' },
@@ -96,6 +98,7 @@ export const CARD_SCHEMA = {
     sms_aliases: { type: 'array', items: { type: 'string' }, description: '결제 문자·알림에 이 카드가 표시되는 이름들' },
     bank_hint: { ...nullable('string'), description: '체크카드면 연결된 은행 이름' },
     benefits: { ...nullable('string'), description: '널리 알려진 주요 혜택 1~3줄 요약(모르면 null)' },
+    card_kind: { type: ['string', 'null'], enum: ['general', 'local_currency', 'onnuri'], description: '지역화폐 카드면 local_currency, 디지털온누리면 onnuri, 일반 카드면 general' },
     confidence: { type: 'string', enum: ['high', 'medium', 'low'], description: '카드 상품을 맞혔다고 얼마나 확신하는지' },
   },
 } as const;
@@ -110,6 +113,7 @@ export const CARD_SYSTEM_PROMPT = `너는 한국 신용카드·체크카드 사�
 추론(사진에 글자로 없어도 된다)
 - 로고·색·무늬·글씨체·카드 앞 6자리(BIN)로 카드사와 상품을 알아낸다. 예: 검은 무광에 M 로고 → 현대카드 M.
 - type: 'CHECK'·'체크'·'DEBIT' 이 보이거나 은행 체크카드 디자인이면 check_card, 선불·기프트면 prepaid_card, 나머지는 credit_card.
+- 지역화폐 카드(여민전·온통대전·동백전·인천e음·경기지역화폐 등)는 type = check_card, card_kind = local_currency. 디지털온누리는 card_kind = onnuri. 나머지 체크카드는 general.
 - sms_aliases: 결제 문자·앱 알림에서 이 카드를 부르는 이름(예: ["현대카드", "현대"], ["신한카드", "신한"], ["KB국민카드", "국민"]).
 - bank_hint: 체크카드면 연결 은행(예: 신한은행, 국민은행). 아니면 null.
 - benefits: 그 상품의 널리 알려진 대표 혜택을 짧게(1~3줄, 줄바꿈으로 구분). 확실하지 않으면 null.
@@ -139,6 +143,7 @@ export function coerceScannedCard(raw: unknown): ScannedCard {
     sms_aliases: Array.isArray(o.sms_aliases) ? [...new Set(o.sms_aliases.map((a) => str(a, 20)).filter((a): a is string => !!a))].slice(0, 6) : [],
     bank_hint: str(o.bank_hint, 20),
     benefits: str(o.benefits, 300),
+    card_kind: o.card_kind === 'local_currency' || o.card_kind === 'onnuri' || o.card_kind === 'general' ? o.card_kind : null,
     confidence: o.confidence === 'high' || o.confidence === 'medium' ? o.confidence : 'low',
   };
 }

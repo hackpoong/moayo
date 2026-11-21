@@ -1,7 +1,6 @@
 import { formatWon, recurringDate } from '@moayo/core';
 import { Pause, Play, Trash2 } from 'lucide-react';
 import { EmptyState } from '../../components/bits.tsx';
-import { MemberBadge } from '../../components/MemberBadge.tsx';
 import { useData } from '../../data/dataContext.ts';
 import { useMutations } from '../../data/mutations.ts';
 import { assetIcon } from '../../lib/assets.ts';
@@ -39,8 +38,7 @@ export function RecurringPage() {
                 <p className="flex items-center gap-1 truncate text-[13px] font-normal text-muted">
                   매달 {r.day_of_month}일{r.times ? ` · ${r.times}회` : ''} ·{' '}
                   {r.paused ? '멈춤' : `다음 ${recurringDate(r, nextOf(r.last_generated_month, r.start_month)).slice(5).replace('-', '.')}`}
-                  {who ? <MemberBadge member={who} /> : null}
-                  {pm ? `${assetIcon(pm)}${pm.name}` : ''}
+                  {pm ? `${assetIcon(pm)}${pm.name}` : who ? `${who.display_name}` : ''}
                 </p>
               </div>
               <button type="button" aria-label={r.paused ? '다시 하기' : '멈추기'} onClick={() => void save('recurring_rules', { ...r, paused: !r.paused })} className="press rounded-full p-2 text-muted">

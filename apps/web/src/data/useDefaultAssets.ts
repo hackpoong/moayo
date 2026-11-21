@@ -29,7 +29,7 @@ export function useDefaultAssets(): void {
             ...baseRow(householdId),
             id,
             name: a.name,
-            icon: a.icon,
+            icon: null,
             type: 'other',
             issuer: DEFAULT_ASSET_MARK[a.kind],
             last4: null,

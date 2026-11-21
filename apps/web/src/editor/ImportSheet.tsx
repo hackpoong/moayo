@@ -353,8 +353,8 @@ export function ImportSheet({
 }
 
 const QUALITY: { value: AiQuality; title: string; hint: string }[] = [
-  { value: 'fast', title: '빠르게', hint: '1장 약 7원' },
-  { value: 'accurate', title: '정확하게', hint: '1장 약 27원' },
+  { value: 'fast', title: '빠르게', hint: '대부분의 사진' },
+  { value: 'accurate', title: '정확하게', hint: '흐리거나 복잡한 사진' },
 ];
 
 /** 사진을 읽을 AI 고르기. 고른 값은 이 기기에 기억한다. */

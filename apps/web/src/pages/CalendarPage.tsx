@@ -63,7 +63,20 @@ export function CalendarPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <MonthNav month={month} onChange={changeMonth} />
+        <MonthNav month={month} onChange={changeMonth}>
+          {/* 오늘로 돌아가기: 이번 달로 가고 오늘 날짜를 고른다 */}
+          <button
+            type="button"
+            onClick={() => {
+              setMonth(today.slice(0, 7));
+              setSelected(today);
+            }}
+            disabled={month === today.slice(0, 7) && selected === today}
+            className="press ml-1 h-8 rounded-full border border-line px-3 text-sm font-semibold text-brand disabled:text-muted disabled:opacity-50"
+          >
+            오늘
+          </button>
+        </MonthNav>
         <BasisToggle basis={basis} />
       </div>
 

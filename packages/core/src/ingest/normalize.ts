@@ -231,7 +231,7 @@ function tenderPayments(item: ExtractedItem, amount: number, cardMethod: Payment
 
 const isLabeled = (c: Candidate) => !!(c.payment_label || c.payment_method_id);
 
-const LOCAL_CURRENCY = /여민전|온통대전|동백전|인천e음|경기지역화폐|chak|코나|지역화폐/i;
+const LOCAL_CURRENCY = /여민전|온통대전|동백전|인천e음|경기지역화폐|chak|코나|지역화폐|온누리/i;
 
 /** 표시 이름이 가리키는 지역화폐 이름(같은 지역화폐면 같은 값). 없으면 null. */
 export function localCurrencyKey(label: string | null | undefined): string | null {
@@ -243,8 +243,15 @@ export function localCurrencyKey(label: string | null | undefined): string | nul
 
 export function isLocalCurrency(c: Pick<Candidate, 'payment_method_id' | 'payment_label'>, methods: readonly PaymentMethod[]): boolean {
   const m = c.payment_method_id ? methods.find((x) => x.id === c.payment_method_id) : null;
-  if (m?.type === 'local_currency') return true;
+  if (m && isLocalCurrencyMethod(m)) return true;
   return localCurrencyKey(c.payment_label) !== null;
+}
+
+/** 지역화폐·디지털온누리 자산인지(예전 '지역화폐' 그룹, 또는 체크카드의 카드 성격, 또는 이름). */
+export function isLocalCurrencyMethod(m: Pick<PaymentMethod, 'type' | 'name'> & { card_kind?: string | null }): boolean {
+  if (m.type === 'local_currency') return true;
+  if (m.card_kind === 'local_currency' || m.card_kind === 'onnuri') return true;
+  return m.card_kind !== 'general' && (m.type === 'check_card' || m.type === 'prepaid_card') && localCurrencyKey(m.name) !== null;
 }
 
 /**

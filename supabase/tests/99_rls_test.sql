@@ -273,5 +273,9 @@ select test.ok((select count(*) from public.household_vault) = 0, '캐럴: 다�
 select test.ok((select count(*) from public.payment_methods where card_number is not null) = 0, '캐럴: 다른 가족 카드번호 안 보임');
 select test.login(:'alice');
 
+-- ── 카드 성격 ────────────────────────────────────────────────────────────
+select test.ok(test.affected(format($$update public.payment_methods set card_kind = 'onnuri' where household_id = %L and type = 'check_card'$$, :'ha')) >= 0, '카드 성격 저장');
+select test.ok(test.throws(format($$update public.payment_methods set card_kind = 'weird' where household_id = %L$$, :'ha')), '카드 성격 값 확인');
+
 reset role;
 \echo 'ALL DB TESTS PASSED'

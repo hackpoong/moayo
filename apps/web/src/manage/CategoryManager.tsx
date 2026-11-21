@@ -1,6 +1,6 @@
 import { joinIconName, splitIconName, type Category, type CategoryKind } from '@moayo/core';
 import { ArrowLeft, MinusCircle, Pencil, Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Sheet } from '../components/Sheet.tsx';
 import { SortableList } from '../components/SortableList.tsx';
 import { useToast } from '../components/toastContext.ts';
@@ -64,8 +64,11 @@ export function CategoryNameSheet({ kind, category, onClose, onSaved }: { kind: 
   const parsed = splitIconName(text);
   const duplicate = data.categories.some((c) => c.kind === kind && !c.archived && c.name === parsed.name && c.id !== category?.id);
 
+  // 닫히는 동안(애니메이션) 다시 눌러도 한 번만 저장한다.
+  const submitted = useRef(false);
   const submit = (close: () => void) => {
-    if (!parsed.name || duplicate) return;
+    if (!parsed.name || duplicate || submitted.current) return;
+    submitted.current = true;
     const list = data.categories.filter((c) => c.kind === kind);
     const row: Category = category
       ? { ...category, name: parsed.name.slice(0, 20), icon: parsed.icon }

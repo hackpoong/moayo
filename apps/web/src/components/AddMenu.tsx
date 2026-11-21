@@ -1,6 +1,7 @@
 import { Camera, Pencil, Plus, ReceiptText } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocation } from 'react-router';
 import type { EditorRequest } from '../editor/editorContext.ts';
 import { haptic } from '../lib/flash.ts';
 import { expandFrom, flyDot, play } from '../lib/motion.ts';
@@ -19,6 +20,7 @@ const ITEMS = [
  */
 export function AddMenu({ open: openEditor }: { open: (req?: EditorRequest) => void }) {
   const [state, setState] = useState<'closed' | 'open' | 'closing'>('closed');
+  const location = useLocation();
   const gallery = useRef<HTMLInputElement>(null);
   const camera = useRef<HTMLInputElement>(null);
   const pushed = useRef(false);
@@ -136,7 +138,10 @@ export function AddMenu({ open: openEditor }: { open: (req?: EditorRequest) => v
     window.history.back();
   };
   const shown = state !== 'closed';
+  // 통계·더보기 화면에서는 + 를 보이지 않는다.
+  const hiddenHere = /^\/(stats|more)(\/|$)/.test(location.pathname);
 
+  if (hiddenHere && !shown) return null;
   return (
     <>
       <input ref={gallery} type="file" accept="image/*" multiple className="hidden" onChange={(e) => (pickFiles(e.target.files), (e.target.value = ''))} />

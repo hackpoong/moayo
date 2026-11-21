@@ -97,6 +97,10 @@ html,
 body {
   overscroll-behavior-y: none;
 }
+/* 화면 확대(두 손가락·두 번 누르기)를 막고 스크롤만 허용한다. 사진 보기는 자체 확대를 쓴다. */
+* {
+  touch-action: pan-x pan-y;
+}
 
 body {
   background: var(--app-bg);

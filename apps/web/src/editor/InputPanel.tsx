@@ -10,7 +10,7 @@ import {
 } from '@moayo/core';
 import { ChevronDown, Delete, Pencil, Sparkles } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { ASSET_GROUP_ORDER, assetIcon } from '../lib/assets.ts';
+import { ASSET_GROUP_ORDER, assetIcon, groupOf } from '../lib/assets.ts';
 import { haptic } from '../lib/flash.ts';
 
 export type PanelKind = 'amount' | 'category' | 'asset';
@@ -283,7 +283,7 @@ export function AssetPanel({
   // 지금 보고 있는 사람의 자산 + 주인이 없는(같이 쓰는) 자산.
   const isFresh = useFreshGuard();
   const visible = methods.filter((m) => !m.archived && (!m.owner_member_id || m.owner_member_id === viewingMember?.id || members.length < 2));
-  const groups = TYPE_ORDER.map((t) => ({ type: t, items: visible.filter((m) => m.type === t) })).filter((g) => g.items.length);
+  const groups = TYPE_ORDER.map((t) => ({ type: t, items: visible.filter((m) => groupOf(m.type) === t) })).filter((g) => g.items.length);
 
   return (
     <PanelFrame

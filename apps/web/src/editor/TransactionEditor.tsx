@@ -151,7 +151,6 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   const paymentMethod = effectivePmId ? data.byId.paymentMethod.get(effectivePmId) : undefined;
   // 쓴 사람: 자산 주인. 같이 쓰는 자산이면 고를 때 보고 있던 사람.
   const effectiveMemberId = paymentMethod?.owner_member_id ?? memberId;
-  const member = effectiveMemberId ? (data.byId.member.get(effectiveMemberId) ?? null) : null;
   const isCredit = paymentMethod?.type === 'credit_card';
   const cashDate = original?.cash_date_override ? original.cash_date : computeCashDate(date, paymentMethod);
   const allTransferRules = useMemo(() => [...data.transferRules, ...memberTransferRules(data.members)], [data.transferRules, data.members]);
@@ -164,6 +163,12 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
   const payGap = payMulti ? amount - pays.reduce((t, x) => t + x.amount, 0) : 0;
   const valid =
     amount > 0 && splitGap === 0 && payGap === 0 && (!payMulti || pays.length > 0) && splitsAreValid(amount, finalSplits) && /^\d{4}-\d{2}-\d{2}$/.test(date);
+
+  // 바꾼 것이 있는지: 고치기는 처음 값과 비교하고, 새 내역은 제목·금액·메모·사진을 넣었는지 본다.
+  const signature = JSON.stringify([kind, title.trim(), amount, finalSplits, payMulti ? pays : null, paymentMethodId, date, time, memo.trim(), installments, tagIds, photos.map((p) => p.id)]);
+  const [baseSignature] = useState(signature);
+  const dirty = original ? signature !== baseSignature : !!(title.trim() || amount > 0 || memo.trim() || photos.length || repeat.on);
+  const [leaveAsk, setLeaveAsk] = useState(false);
 
   // 자산 입력판에서 보고 있는 사람: 직접 바꾼 사람 → 고른 자산의 주인 → 나 → 첫 구성원.
   const viewingMember: Member | null = pickViewingMember();
@@ -619,15 +624,36 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
             setViewer(null);
             return true;
           }
-          if (!panel) return false;
-          setPanel(null);
-          return true;
+          if (panel) {
+            setPanel(null);
+            return true;
+          }
+          // 바꾼 것이 있으면 나가기 전에 저장할지 묻는다.
+          if (dirty && !leaveAsk) {
+            setLeaveAsk(true);
+            return true;
+          }
+          return false;
         }}
         header={(close) => (
           <div className="flex h-12 items-center gap-1 px-2">
-            <button type="button" aria-label="닫기" onClick={close} className="press flex size-11 items-center justify-center rounded-full">
+            <button type="button" aria-label="닫기" onClick={() => (dirty ? setLeaveAsk(true) : close())} className="press flex size-11 items-center justify-center rounded-full">
               <ArrowLeft className="size-6" aria-hidden />
             </button>
+            {leaveAsk ? (
+              <LeaveSheet
+                canSave={valid}
+                onSave={() => {
+                  setLeaveAsk(false);
+                  submit(close);
+                }}
+                onDiscard={() => {
+                  setLeaveAsk(false);
+                  close();
+                }}
+                onStay={() => setLeaveAsk(false)}
+              />
+            ) : null}
             <h2 className="min-w-0 flex-1 truncate text-lg font-bold">
               {original ? `${KIND_LABEL[kind]} 고치기` : KIND_LABEL[kind]}
               {savedCount ? <span className="ml-2 text-sm font-medium text-muted">{savedCount}건 저장함</span> : null}
@@ -836,14 +862,12 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
                 empty="자산을 고르세요"
                 rows={pays.map((x, i) => {
                   const pm = x.payment_method_id ? data.byId.paymentMethod.get(x.payment_method_id) : undefined;
-                  const who = x.member_id ? data.byId.member.get(x.member_id) : null;
                   const due = computeCashDate(date, pm);
                   return {
                     key: x.payment_method_id ?? String(i),
                     label: (
                       <>
-                        {activeMembers.length > 1 && who ? <MemberBadge member={who} size="md" /> : null}
-                        <span aria-hidden>{assetIcon(pm)}</span>
+                        {assetIcon(pm) ? <span aria-hidden>{assetIcon(pm)}</span> : null}
                         <span className="truncate">{pm?.name ?? '자산'}</span>
                         {due !== date ? <InfoTip text={`${shortDate(due)} 결제 예정`} label="결제 예정일" /> : null}
                       </>
@@ -859,8 +883,7 @@ export function TransactionEditor({ request, onClose }: { request: EditorRequest
               <>
                 <Row label={kind === 'transfer' ? '보낸 곳' : kind === 'income' ? '받은 곳' : '자산'} active={panel === 'asset'} onClick={() => openPanel('asset')}>
                   <span className={`flex min-w-0 flex-1 items-center gap-1.5 text-base ${paymentMethod ? '' : 'text-muted/50'}`}>
-                    {activeMembers.length > 1 && member ? <MemberBadge member={member} size="md" /> : null}
-                    {paymentMethod ? <span aria-hidden>{assetIcon(paymentMethod)}</span> : null}
+                    {assetIcon(paymentMethod) ? <span aria-hidden>{assetIcon(paymentMethod)}</span> : null}
                     <span className="truncate">{paymentMethod?.name ?? (original?.payment_label ? `‘${original.payment_label}’` : '선택')}</span>
                     {cashDate !== date ? (
                       <InfoTip text={`${shortDate(cashDate)} 결제 예정${isCredit && installments > 1 ? ` · ${installments}개월 나눠서` : ''}`} label="결제 예정일" />
@@ -1089,5 +1112,27 @@ function ReviewBanner({ tx, onResolve }: { tx: Transaction; onResolve: (same: bo
         </Button>
       </div>
     </div>
+  );
+}
+
+/** 바꾼 내용이 있을 때 나가려고 하면: 저장하고 나가기 / 저장 안 하고 나가기 / 계속 수정. */
+function LeaveSheet({ canSave, onSave, onDiscard, onStay }: { canSave: boolean; onSave: () => void; onDiscard: () => void; onStay: () => void }) {
+  return (
+    <Sheet title="저장하지 않은 내용이 있어요" onClose={onStay}>
+      {(close) => (
+        <div className="space-y-2">
+          {!canSave ? <p className="pb-1 text-sm text-muted">금액·분류 금액이 맞아야 저장할 수 있어요.</p> : null}
+          <Button block disabled={!canSave} onClick={onSave}>
+            저장하고 나가기
+          </Button>
+          <Button block variant="secondary" onClick={onDiscard} className="text-expense">
+            저장 안 하고 나가기
+          </Button>
+          <Button block variant="secondary" onClick={close}>
+            계속 수정
+          </Button>
+        </div>
+      )}
+    </Sheet>
   );
 }

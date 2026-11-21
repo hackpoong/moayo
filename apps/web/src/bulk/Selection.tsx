@@ -20,7 +20,7 @@ import { baseRow, newId, useMutations } from '../data/mutations.ts';
 import { assetIcon } from '../lib/assets.ts';
 import { suckInto } from '../lib/motion.ts';
 import { haptic } from '../lib/flash.ts';
-import { ASSET_GROUP_ORDER } from '../lib/assets.ts';
+import { ASSET_GROUP_ORDER, groupOf } from '../lib/assets.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
 import { SelectionContext, type SelectionApi } from './selectionContext.ts';
 import { duplicate, withDate } from './txEdit.ts';
@@ -278,17 +278,15 @@ function ActionSheet({ action, txs, onClose, onDone }: { action: Action; txs: Tr
               </div>
             ) : null}
             {ASSET_GROUP_ORDER.map((type) => {
-              const items = list.filter((p) => p.type === type);
+              const items = list.filter((p) => groupOf(p.type) === type);
               if (!items.length) return null;
               return (
                 <div key={type} className="-mx-5">
                   <p className="bg-surface-2 px-5 py-1.5 text-xs font-normal text-muted">{PAYMENT_METHOD_TYPE_LABEL[type]}</p>
                   {items.map((p) => {
-                    const o = p.owner_member_id ? data.byId.member.get(p.owner_member_id) : null;
                     return (
                       <button key={p.id} type="button" onClick={() => pick(p.id)} className="flex h-12 w-full items-center gap-1.5 border-b border-line px-5 text-left text-base active:bg-surface-2">
-                        {people.length > 1 && o ? <MemberBadge member={o} size="md" /> : null}
-                        <span aria-hidden>{assetIcon(p)}</span>
+                        {assetIcon(p) ? <span aria-hidden>{assetIcon(p)}</span> : null}
                         {p.name}
                       </button>
                     );

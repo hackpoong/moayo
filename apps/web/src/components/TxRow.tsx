@@ -56,16 +56,12 @@ export function TxRow({ tx, amount }: { tx: Transaction; amount?: number }) {
   const titleParts = splitIconName(tx.merchant ?? '');
   const title = (titleParts.icon ? titleParts.name : tx.merchant) || (tx.kind === 'transfer' ? '이체' : (firstCat?.name ?? '미분류'));
   // 둘째 줄: '💙 네이버 현대카드' — 낸 사람 이모지 + 자산 이름(여러 자산이면 · 로 이어서).
-  const showWho = data.members.filter((m) => !m.deleted_at).length > 1;
   const pays = (tx.payments?.length ?? 0) > 1 ? tx.payments! : [{ payment_method_id: tx.payment_method_id, member_id: tx.member_id }];
   const payText = pays
     .map((p) => {
       const pm = p.payment_method_id ? data.byId.paymentMethod.get(p.payment_method_id) : null;
-      // 입력 화면과 같게: 자산 주인 → 기록된 사람.
-      const whoId = pm?.owner_member_id ?? p.member_id;
-      const who = whoId ? data.byId.member.get(whoId) : null;
       const name = pm?.name ?? (pays.length === 1 ? tx.payment_label : null);
-      return name ? [showWho ? who?.emoji : null, name].filter(Boolean).join(' ') : '';
+      return name ? `${pm?.icon ?? ''}${name}` : '';
     })
     .filter(Boolean)
     .join(' · ');

@@ -19,7 +19,7 @@ import {
   type PaymentMethodType,
 } from '@moayo/core';
 import { ArrowLeft, ChevronRight, MinusCircle, MoreVertical, Plus } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { MemberBadge } from '../components/MemberBadge.tsx';
 import { Sheet } from '../components/Sheet.tsx';
 import { SortableList } from '../components/SortableList.tsx';
@@ -27,9 +27,10 @@ import { useToast } from '../components/toastContext.ts';
 import { Button } from '../components/ui.tsx';
 import { useData } from '../data/dataContext.ts';
 import { baseRow, useMutations } from '../data/mutations.ts';
-import { ASSET_GROUP_ORDER, assetIcon, LINKABLE_TYPES, PICKABLE_ASSET_TYPES } from '../lib/assets.ts';
+import { ASSET_GROUP_ORDER, groupOf, ASSET_TYPE_ICON, assetIcon, CARD_KIND_LABEL, LINKABLE_TYPES, PICKABLE_ASSET_TYPES, type CardKind } from '../lib/assets.ts';
 import { useCurrentHousehold } from '../lib/householdContext.ts';
 import { availableKey } from '../lib/vault.ts';
+import { haptic } from '../lib/flash.ts';
 import { seal } from '../lib/vaultCrypto.ts';
 import { CardScan, CvcField } from './CardFields.tsx';
 import { VaultSheet } from './VaultSheet.tsx';
@@ -37,7 +38,7 @@ import { VaultSheet } from './VaultSheet.tsx';
 const CARD_TYPES: PaymentMethodType[] = ['credit_card', 'check_card', 'prepaid_card'];
 const NOTE: Partial<Record<PaymentMethodType, string>> = {
   check_card: '체크카드는 쓴 날 바로 계좌에서 나갑니다. 결제 계좌를 정해 두면 계좌 내역과 겹치지 않게 맞춥니다.',
-  local_currency: '여민전·온통대전처럼 캐시백이 있는 지역화폐는 결제 금액 그대로 기록하고, 잔액 차감 줄은 자동으로 정리합니다.',
+  local_currency: '여민전·온통대전·디지털온누리처럼 캐시백이 있는 카드는 결제 금액 그대로 기록하고, 잔액 차감 줄은 자동으로 정리합니다.',
   overdraft: '마이너스통장·대출 잔액은 아직 따로 계산하지 않습니다. 이자·상환을 기록하는 자산으로 쓰세요.',
   loan: '마이너스통장·대출 잔액은 아직 따로 계산하지 않습니다. 이자·상환을 기록하는 자산으로 쓰세요.',
 };
@@ -47,11 +48,10 @@ export function AssetList({ ordering, onEdit, ownerFilter }: { ordering: boolean
   const data = useData();
   const { save } = useMutations();
   const toast = useToast();
-  const people = data.members.filter((m) => !m.deleted_at);
   const visible = data.paymentMethods.filter(
     (p) => !p.archived && (ownerFilter === 'all' || p.owner_member_id === ownerFilter || !p.owner_member_id),
   );
-  const groups = ASSET_GROUP_ORDER.map((t) => ({ type: t, items: visible.filter((p) => p.type === t) })).filter((g) => g.items.length);
+  const groups = ASSET_GROUP_ORDER.map((t) => ({ type: t, items: visible.filter((p) => groupOf(p.type) === t) })).filter((g) => g.items.length);
 
   const reorder = (ids: string[]) =>
     ids.forEach((id, i) => {
@@ -65,11 +65,9 @@ export function AssetList({ ordering, onEdit, ownerFilter }: { ordering: boolean
   };
 
   const label = (p: PaymentMethod) => {
-    const owner = p.owner_member_id ? data.byId.member.get(p.owner_member_id) : null;
     return (
       <span className="flex min-w-0 flex-1 items-center gap-1.5 text-base">
-        {people.length > 1 && owner ? <MemberBadge member={owner} size="md" /> : null}
-        <span aria-hidden>{assetIcon(p)}</span>
+        {assetIcon(p) ? <span aria-hidden>{assetIcon(p)}</span> : null}
         <span className="truncate">{p.name}</span>
       </span>
     );
@@ -195,7 +193,8 @@ export function AssetEditor({
   const household = useCurrentHousehold();
   const { save, remove } = useMutations();
   const people = data.members.filter((m) => !m.deleted_at);
-  const [type, setType] = useState<PaymentMethodType | null>(initial?.type ?? null);
+  // 예전 '지역화폐' 그룹은 체크카드(카드 성격: 지역화폐)로 열린다.
+  const [type, setType] = useState<PaymentMethodType | null>(initial?.type === 'local_currency' ? 'check_card' : (initial?.type ?? null));
   const [picking, setPicking] = useState(!initial);
   const [text, setText] = useState(initial ? joinIconName(initial.icon, initial.name) : '');
   // 자산 주인은 한 사람(💛/💙). 주인이 없던 예전 자산은 나로 미리 골라 둔다.
@@ -204,6 +203,10 @@ export function AssetEditor({
   // 카드번호는 전체(또는 끝 4자리만) 그대로 보인다. CVC 만 암호화.
   const [cardNumber, setCardNumber] = useState(initial?.card_number ?? initial?.last4 ?? '');
   const [cardExpiry, setCardExpiry] = useState(initial?.card_expiry ?? '');
+  // 체크카드의 성격(일반 / 지역화폐 / 디지털온누리). 예전 '지역화폐' 그룹 자산은 지역화폐로 본다.
+  const [cardKind, setCardKind] = useState<CardKind>(
+    initial?.card_kind ?? (initial?.type === 'local_currency' ? (/온누리/.test(initial.name) ? 'onnuri' : 'local_currency') : 'general'),
+  );
   const [cvc, setCvc] = useState<string | null>(null);
   const [memo, setMemo] = useState(initial?.memo ?? '');
   const [aliases, setAliases] = useState((initial?.aliases ?? []).join(', '));
@@ -216,6 +219,10 @@ export function AssetEditor({
   const [startTouched, setStartTouched] = useState(!!initial?.billing);
   const toast = useToast();
   const parsed = splitIconName(text);
+  // 저장 중에는 다시 눌러도 한 번만(연타로 같은 자산이 여러 개 생기지 않게).
+  const saving = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [added, setAdded] = useState<{ name: string; close: () => void } | null>(null);
   const billing = type === 'credit_card' ? billingFromDays(startDay, payDay) : null;
   const accounts = data.paymentMethods.filter((p) => p.type === 'bank_account' && !p.archived && p.id !== initial?.id);
   const usedCount = useMemo(() => (initial ? data.transactions.filter((t) => t.payment_method_id === initial.id).length : 0), [data.transactions, initial]);
@@ -242,6 +249,11 @@ export function AssetEditor({
       filled.add('이름');
     }
     if (card.color) setColor(card.color);
+    if (card.card_kind && card.card_kind !== 'general') {
+      setCardKind(card.card_kind);
+      setType('check_card');
+      filled.add('카드 성격');
+    }
     if (card.sms_aliases.length) {
       const have = aliases.split(',').map((a) => a.trim()).filter(Boolean);
       setAliases([...new Set([...have, ...card.sms_aliases])].join(', '));
@@ -285,6 +297,33 @@ export function AssetEditor({
   const expiryOk = !cardExpiry || !!normalizeExpiry(cardExpiry);
 
   const submit = async (close: () => void, key?: CryptoKey) => {
+    if (!type || !parsed.name || saving.current) return;
+    saving.current = true;
+    setBusy(true);
+    try {
+      await submitInner(close, key);
+    } finally {
+      saving.current = false;
+      setBusy(false);
+    }
+  };
+
+  /** 새 자산을 저장한 뒤 같은 그룹·주인으로 다음 자산을 바로 넣는다. */
+  const resetForNext = () => {
+    setText('');
+    setCardNumber('');
+    setCardExpiry('');
+    setCvc(null);
+    setMemo('');
+    setAliases('');
+    setLinked(null);
+    setColor(null);
+    setAiFilled(new Set());
+    setCardKind('general');
+    setAdded(null);
+  };
+
+  const submitInner = async (close: () => void, key?: CryptoKey) => {
     if (!type || !parsed.name) return;
     if (fullNumber && !luhnValid(fullNumber) && !window.confirm('카드번호 검증이 맞지 않아요. 그대로 저장할까요?')) return;
     // CVC 만 금고로 암호화한다. 이 휴대폰이 금고를 기억하지 않으면 먼저 연다.
@@ -316,9 +355,17 @@ export function AssetEditor({
       billing,
       color,
       secret: isCard ? secret : null,
+      card_kind: type === 'check_card' ? cardKind : null,
     };
     const saved = await save('payment_methods', row);
     onSaved?.(saved);
+    if (!initial) {
+      // 새로 추가: 시트를 닫지 않고 '목록으로 / 계속 추가하기'를 묻는다.
+      haptic(12);
+      setAdded({ name: saved.name, close });
+      return;
+    }
+    toast({ message: '저장했어요' });
     close();
     // 결제일 규칙이 바뀌면 이 자산으로 기록한 내역의 '나간 날'도 다시 계산한다(직접 정한 날짜는 그대로).
     if (initial && (initial.type !== saved.type || JSON.stringify(initial.billing) !== JSON.stringify(saved.billing))) {
@@ -361,7 +408,7 @@ export function AssetEditor({
         )}
         footer={(close) => (
           <div className="flex gap-2">
-            <Button block disabled={!type || !parsed.name} onClick={() => void submit(close)}>
+            <Button block busy={busy} disabled={!type || !parsed.name} onClick={() => void submit(close)}>
               저장하기
             </Button>
             {initial ? (
@@ -400,10 +447,21 @@ export function AssetEditor({
               onChange={(e) => setText(e.target.value)}
               maxLength={34}
               aria-label="자산 이름"
-              placeholder={type ? `${assetIcon({ type })}${type === 'credit_card' ? '현대카드' : PAYMENT_METHOD_TYPE_LABEL[type]}` : '이름'}
+              placeholder={type ? (type === 'credit_card' ? '예: 현대카드(성욱)' : PAYMENT_METHOD_TYPE_LABEL[type]) : '이름'}
               className="w-full bg-transparent text-base outline-none placeholder:text-muted/40"
             />
           </Line>
+          {type === 'check_card' ? (
+            <Line label="카드 성격" ai={aiFilled.has('카드 성격')}>
+              <select value={cardKind} onChange={(e) => setCardKind(e.target.value as CardKind)} aria-label="카드 성격" className="w-full bg-transparent text-base outline-none">
+                {(Object.keys(CARD_KIND_LABEL) as CardKind[]).map((k) => (
+                  <option key={k} value={k}>
+                    {CARD_KIND_LABEL[k]}
+                  </option>
+                ))}
+              </select>
+            </Line>
+          ) : null}
           {type && LINKABLE_TYPES.includes(type) ? (
             <Line label="결제" ai={aiFilled.has('결제')}>
               <select value={linked ?? ''} onChange={(e) => setLinked(e.target.value || null)} aria-label="결제 계좌" className="w-full bg-transparent text-base outline-none">
@@ -512,9 +570,34 @@ export function AssetEditor({
               </div>
             </>
           ) : null}
-          {type && NOTE[type] ? <p className="mt-4 text-sm font-normal leading-relaxed text-muted">{NOTE[type]}</p> : null}
+          {type && NOTE[type === 'check_card' && cardKind !== 'general' ? 'local_currency' : type] ? (
+            <p className="mt-4 text-sm font-normal leading-relaxed text-muted">{NOTE[type === 'check_card' && cardKind !== 'general' ? 'local_currency' : type]}</p>
+          ) : null}
         </div>
       </Sheet>
+      {added ? (
+        <Sheet title="자산을 추가했어요" onClose={() => added.close()}>
+          {(closeDialog) => (
+            <div className="space-y-3">
+              <p className="text-[15px]">‘{added.name}’을(를) 추가했어요.</p>
+              <div className="flex gap-2">
+                <Button variant="secondary" block onClick={() => closeDialog()}>
+                  목록으로
+                </Button>
+                <Button
+                  block
+                  onClick={() => {
+                    // 시트를 닫지 않고 빈 칸으로 다음 자산을 넣는다.
+                    resetForNext();
+                  }}
+                >
+                  계속 추가하기
+                </Button>
+              </div>
+            </div>
+          )}
+        </Sheet>
+      ) : null}
       {askVault ? (
         <VaultSheet
           householdId={household.householdId}
@@ -542,7 +625,7 @@ export function AssetEditor({
                     }}
                     className={`flex h-12 w-full items-center gap-2 px-6 text-left text-base ${t === type ? 'font-bold text-brand' : ''}`}
                   >
-                    <span aria-hidden>{assetIcon({ type: t })}</span>
+                    <span aria-hidden>{ASSET_TYPE_ICON[t]}</span>
                     {PAYMENT_METHOD_TYPE_LABEL[t]}
                   </button>
                 </li>
